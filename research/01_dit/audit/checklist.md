@@ -12,7 +12,7 @@
 - [x] Step 8: Single DiT Block & Zero-Init Identity
 - [x] Step 9: Final Layer Head
 - [x] Step 10: Complete DiT Assembly & Parameter Audit
-- [ ] Step 11: Flow Matching Objective
+- [x] Step 11: Flow Matching Objective
 - [ ] Step 12: Forward/Backward Training Smoke Test
 - [ ] Step 13: Checkpoint Save & Resume Integrity
 - [ ] Step 14: Deterministic Euler ODE Sampler

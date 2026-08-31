@@ -39,3 +39,7 @@
 11. **Final Layer Head & Output Zero-Initialization:**
     - Maps the contextual token representations $[B, N, D]$ through a conditioned LayerNorm ($\text{shift}_{\text{final}}, \text{scale}_{\text{final}}$ from $\mathbf{c}$) followed by a single velocity-prediction output projection $\text{Linear}(D \to P^2 \cdot C_{\text{out}})$.
     - **Why zero-initialize the FinalLayer?** Zero-initialization is a deliberate DiT baseline initialization strategy that starts the model with zero velocity predictions ($v_\theta \equiv \mathbf{0}$). This prevents arbitrary large random initial outputs before learning begins and gives the model a simple, stable starting point, helping early optimization stability. It is an optimization and stability choice, not a strict mathematical requirement of the Flow Matching objective.
+12. **Frozen Baseline Flow Matching Objective:**
+    - Straightforward **Linear Interpolation Path**: $\mathbf{x}_t = (1 - t)\mathbf{x}_0 + t\mathbf{x}_1$ connecting standard Gaussian noise $\mathbf{x}_0 \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$ ($t=0$) to real data latent $\mathbf{x}_1 \sim p_{\text{data}}(\mathbf{x})$ ($t=1$).
+    - Straight-line velocity target: $\mathbf{v}_{\text{target}} = \frac{d\mathbf{x}_t}{dt} = \mathbf{x}_1 - \mathbf{x}_0 = \mathbf{x}_{\text{data}} - \mathbf{x}_{\text{noise}}$.
+    - Flow Matching MSE loss: $\mathcal{L}_{\text{FM}}(\theta) = \mathbb{E}_{t, \mathbf{x}_0, \mathbf{x}_1} \left[ \| \mathbf{v}_\theta(\mathbf{x}_t, t, \mathbf{y}_{\text{text}}) - (\mathbf{x}_1 - \mathbf{x}_0) \|_2^2 \right]$.
