@@ -10,7 +10,7 @@
 
 ---
 
-## 🌟 Architecture Lineage & Research Labs
+## Architecture Lineage & Research Labs
 
 To avoid premature architectural lock-in, RerngGen uses isolated research laboratories to evaluate and audit generative backbone paradigms before adopting them into the core production engine:
 
@@ -25,7 +25,7 @@ research/
 
 ---
 
-## 🪜 Model Scaling Ladder
+## Model Scaling Ladder
 
 | Scale Tier | Parameters | Primary Purpose | Target Compute |
 | :--- | :--- | :--- | :--- |
@@ -38,7 +38,7 @@ research/
 
 ---
 
-## 📂 Repository Structure
+## Repository Structure
 
 ```plain text
 RerngGen/
@@ -60,7 +60,7 @@ RerngGen/
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Environment Setup
 ```bash
@@ -87,12 +87,12 @@ pytest -v
 
 ---
 
-## ⚖️ Ethics, Governance & Artist Rights
+## Ethics, Governance & Artist Rights
 
 - **Data Provenance First:** The base foundation model is trained strictly on open, fully licensed datasets with auditable metadata manifests.
 - **Specialist Adapters:** Specific artist styles or culturally unique artistic traditions (e.g. Khmer children's book style) are trained exclusively as lightweight **LoRA adapters** governed by explicit bilateral licensing agreements.
 
 ---
 
-## 📄 License
+## License
 This project is licensed under the **Apache License 2.0** - see the [LICENSE](LICENSE) file for details.
