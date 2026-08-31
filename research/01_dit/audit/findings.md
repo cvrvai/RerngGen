@@ -10,4 +10,5 @@
 | 2026-08-31 | Step 5: MultiHeadAttn | PASSED | Pair Programming | [B, 256, 384] -> [B, 256, 384], 6 heads, SDPA, 591,360 params, 9/9 tests passed |
 | 2026-08-31 | Step 6: TransformerMLP | PASSED | Pair Programming | [B, 256, 384] -> [B, 256, 1536] -> [B, 256, 384], GELU, 1,181,568 params, 7/7 tests passed |
 | 2026-08-31 | Step 7: AdaLNZero | PASSED | Pair Programming | c [B, 384] -> 6 x [B, 384], strict zero-init & grad semantics verified, 887,040 params, 9/9 tests passed |
-| 2026-08-31 | Step 8: DiTBlock | PASSED | Pair Programming | [B, 256, 384] + [B, 384] -> [B, 256, 384], exact identity verified, 2,659,968 params, 8/8 tests passed |
+| 2026-08-31 | Step 8: DiTBlock | PASSED | Pair Programming | [B, 256, 384] + [B, 384] -> [B, 256, 384], exact identity & grad semantics verified, 2,659,968 params, 9/9 tests passed |
+| 2026-08-31 | Step 9: FinalLayer | PASSED | Pair Programming | [B, 256, 384] -> [B, 256, 16], exact zero-init velocity field verified, 301,840 params, 8/8 tests passed |

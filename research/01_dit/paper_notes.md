@@ -35,4 +35,7 @@
     - **Strict Zero-Initialization:** The final modulation linear projection is strictly initialized with zero weights and zero biases. At step 0, all shifts, scales, and residual gates evaluate to exactly 0:
       $$\beta = 0, \; \gamma = 0 \implies \text{Modulate}(\text{LN}(\mathbf{x}), 0, 0) = \text{LN}(\mathbf{x})$$
       $$\alpha = 0 \implies \mathbf{x}_{\text{out}} = \mathbf{x} + 0 \cdot h = \mathbf{x}$$
-      Thus, every DiT block begins training as an exact identity function, stabilizing forward/backward signal propagation across deep stacks.
+      Thus, every DiT block begins training as an exact identity function, which helps stabilize early optimization and signal propagation across deep stacks.
+11. **Final Layer Head & Output Zero-Initialization:**
+    - Maps the contextual token representations $[B, N, D]$ through a conditioned LayerNorm ($\text{shift}_{\text{final}}, \text{scale}_{\text{final}}$ from $\mathbf{c}$) followed by a linear projection $\text{Linear}(D \to P^2 \cdot C_{\text{out}})$.
+    - The final linear projection is strictly zero-initialized ($\mathbf{W}=0, \mathbf{b}=0$). At step 0, the model predicts an initial velocity field of identically zero ($v_\theta \equiv \mathbf{0}$). In Flow Matching ($v_{\text{target}} = x_1 - x_0$), an initial zero prediction serves as the optimal unbiased midpoint estimate, minimizing early gradient variance.
