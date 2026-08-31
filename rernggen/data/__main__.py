@@ -3,12 +3,16 @@
 Usage:
     python -m rernggen.data import --source "C:\\path\\to\\images" --dataset-id "khmer_story_cartoon_v001"
     python -m rernggen.data preprocess --dataset-id "khmer_story_cartoon_v001" --target-size 256
+    python -m rernggen.data cache-latents --dataset-id "khmer_story_cartoon_v001" --preprocessing-version "square256_center_v001"
 """
 
 import argparse
 import sys
+import torch
 from rernggen.data.importer import DatasetImporter
+from rernggen.data.latent_cache import LatentCacheGenerator
 from rernggen.data.preprocessor import ImagePreprocessor
+from rernggen.models.vae.interface import AutoencoderKLAdapter
 
 
 def main() -> None:
@@ -86,6 +90,59 @@ def main() -> None:
         help="Force re-processing of images even if already present.",
     )
 
+    # Subcommand: cache-latents
+    cache_parser = subparsers.add_parser(
+        "cache-latents",
+        help="Extract and persist frozen VAE model latents [4, 32, 32] as permanent safetensors.",
+    )
+    cache_parser.add_argument(
+        "--dataset-id",
+        "-d",
+        type=str,
+        default="khmer_story_cartoon_v001",
+        help="Dataset ID (default: 'khmer_story_cartoon_v001').",
+    )
+    cache_parser.add_argument(
+        "--preprocessing-version",
+        "-p",
+        type=str,
+        default="square256_center_v001",
+        help="Preprocessing derivative version (default: 'square256_center_v001').",
+    )
+    cache_parser.add_argument(
+        "--cache-version",
+        "-c",
+        type=str,
+        default="vae_sd_mse_square256_v001",
+        help="Cache version identifier (default: 'vae_sd_mse_square256_v001').",
+    )
+    cache_parser.add_argument(
+        "--model-path",
+        "-m",
+        type=str,
+        default="models/vae/stabilityai--sd-vae-ft-mse",
+        help="Local path or HuggingFace ID of AutoencoderKL VAE.",
+    )
+    cache_parser.add_argument(
+        "--dataset-root",
+        "-r",
+        type=str,
+        default="datasets",
+        help="Root directory for dataset repositories (default: 'datasets').",
+    )
+    cache_parser.add_argument(
+        "--device",
+        type=str,
+        default="cuda" if torch.cuda.is_available() else "cpu",
+        help="Compute device (cuda or cpu).",
+    )
+    cache_parser.add_argument(
+        "--force",
+        "-f",
+        action="store_true",
+        help="Force re-encoding even if already cached.",
+    )
+
     args = parser.parse_args()
 
     if args.command == "import":
@@ -115,6 +172,28 @@ def main() -> None:
         print(prep_report.summary())
         if prep_report.failures > 0:
             print(f"\n[WARNING] Encountered {prep_report.failures} processing failure(s).")
+
+    elif args.command == "cache-latents":
+        device = torch.device(args.device)
+        print(f"Loading VAE from {args.model_path} onto {device}...")
+        adapter = AutoencoderKLAdapter.from_pretrained(
+            model_id_or_path=args.model_path,
+            device=device,
+        )
+        generator = LatentCacheGenerator(
+            vae_adapter=adapter,
+            cache_version=args.cache_version,
+            dataset_root=args.dataset_root,
+        )
+        report = generator.generate_cache(
+            dataset_id=args.dataset_id,
+            preprocessing_version=args.preprocessing_version,
+            force=args.force,
+            device=device,
+        )
+        print(report.summary())
+        if report.failures > 0:
+            print(f"\n[WARNING] Encountered {report.failures} latent encoding failure(s).")
 
 
 if __name__ == "__main__":

@@ -160,3 +160,80 @@ class PreprocessingReport:
             f"Elapsed Time:          {self.elapsed_time_seconds:.2f}s\n"
             "============================================================"
         )
+
+
+@dataclass
+class LatentRecord:
+    """Schema for a single cached VAE latent tensor record in cache manifest.jsonl."""
+
+    image_id: str
+    dataset_id: str
+    dataset_version: str
+    source_processed_sha256: str
+    preprocessing_version: str
+    vae_model_id: str
+    vae_revision: str
+    vae_weights_sha256: str
+    vae_config_sha256: str
+    vae_scaling_factor: float
+    posterior_policy: str
+    latent_shape: List[int]
+    latent_dtype: str
+    latent_sha256: str
+    latent_relative_path: str
+    min_val: float
+    max_val: float
+    mean_val: float
+    std_val: float
+    l2_norm: float
+    training_allowed: Optional[bool] = None
+    commercial_allowed: Optional[bool] = None
+    license_id: Optional[str] = None
+    cache_version: str = "vae_sd_mse_square256_v001"
+    status: str = "CACHED"
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Converts dataclass record to a JSON-serializable dictionary."""
+        return asdict(self)
+
+
+@dataclass
+class LatentCacheReport:
+    """Summary report produced upon completion of latent cache generation."""
+
+    dataset_id: str
+    preprocessing_version: str
+    cache_version: str
+    cache_dir: Path
+    manifest_path: Path
+    total_images_in_dataset: int = 0
+    latents_created: int = 0
+    valid_cache_hits: int = 0
+    failures: int = 0
+    total_cache_bytes: int = 0
+    elapsed_time_seconds: float = 0.0
+    vae_provenance: Dict[str, Any] = field(default_factory=dict)
+    records: List[LatentRecord] = field(default_factory=list)
+    failure_details: List[Dict[str, str]] = field(default_factory=list)
+
+    def summary(self) -> str:
+        """Generates a human-readable formatted summary string."""
+        bytes_formatted = ImportReport._format_bytes(self.total_cache_bytes)
+        return (
+            "============================================================\n"
+            "LATENT CACHE GENERATION COMPLETE\n"
+            "============================================================\n"
+            f"Dataset ID:            {self.dataset_id}\n"
+            f"Preprocessing Version: {self.preprocessing_version}\n"
+            f"Cache Version:         {self.cache_version}\n"
+            f"Cache Directory:       {self.cache_dir}\n"
+            f"Manifest Path:         {self.manifest_path}\n"
+            f"Total Images:          {self.total_images_in_dataset}\n"
+            f"Latents Created:       {self.latents_created}\n"
+            f"Valid Cache Hits:      {self.valid_cache_hits}\n"
+            f"Failures:              {self.failures}\n"
+            f"Total Cache Bytes:     {bytes_formatted}\n"
+            f"Elapsed Time:          {self.elapsed_time_seconds:.2f}s\n"
+            "============================================================"
+        )
+
