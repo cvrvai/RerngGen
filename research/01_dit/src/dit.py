@@ -28,11 +28,16 @@ class DiT(nn.Module):
         ├──> + PositionalEmbedding2D -> [B, N, D]
         │
         t [B] ──> TimestepEmbedder -> [B, D] ──┐
-        y [B, text_dim] ──> Linear (optional) ──┴──> Condition c [B, D]
+        text_embed [B, D] (optional) ──────────┴──> Condition c = t_embed + text_embed [B, D]
         │
         ├──> Stack of depth DiTBlocks (adaLN-Zero, Attention, MLP) -> [B, N, D]
         ├──> FinalLayer -> [B, N, P^2 * C_out]
         └──> Unpatchify -> Predicted Velocity Field v_pred [B, C_out, H, W]
+
+    Architectural Boundary Note:
+        Text embedding projection (e.g. CLIP/T5 pooled embedding projected to hidden_size D)
+        lives strictly upstream of DiT. DiT receives already-projected pooled text embeddings
+        of shape [B, D] and combines them via condition addition: c = t_embed + text_embed.
 
     Args:
         in_channels (int): Latent input channels (default: 4).
@@ -44,8 +49,6 @@ class DiT(nn.Module):
         num_heads (int): Number of self-attention heads (default: 6).
         mlp_ratio (float): Hidden expansion ratio for MLP (default: 4.0).
         time_scale (float): Scaling factor for normalized flow time (default: 1000.0).
-        use_text_condition (bool): Whether text conditioning is enabled (default: False).
-        text_dim (int): Input feature dimension of text condition (default: 0).
     """
 
     def __init__(
@@ -59,8 +62,7 @@ class DiT(nn.Module):
         num_heads: int = 6,
         mlp_ratio: float = 4.0,
         time_scale: float = 1000.0,
-        use_text_condition: bool = False,
-        text_dim: int = 0,
+        **kwargs: Any,
     ) -> None:
         super().__init__()
         self.in_channels = in_channels
@@ -72,8 +74,6 @@ class DiT(nn.Module):
         self.num_heads = num_heads
         self.mlp_ratio = mlp_ratio
         self.time_scale = time_scale
-        self.use_text_condition = use_text_condition
-        self.text_dim = text_dim
 
         # 1. Patch Embedding: [B, C_in, H, W] -> [B, N, D]
         self.x_embed = PatchEmbed(
@@ -95,13 +95,7 @@ class DiT(nn.Module):
             time_scale=time_scale,
         )
 
-        # 4. Optional Text/Class Conditioning Embedder: [B, text_dim] -> [B, D]
-        if self.use_text_condition and text_dim > 0:
-            self.y_embedder = nn.Linear(text_dim, hidden_size)
-        else:
-            self.y_embedder = None
-
-        # 5. Transformer Blocks: Depth x DiTBlock
+        # 4. Transformer Blocks: Depth x DiTBlock
         self.blocks = nn.ModuleList(
             [
                 DiTBlock(
@@ -113,14 +107,14 @@ class DiT(nn.Module):
             ]
         )
 
-        # 6. Final Layer Head: [B, N, D] -> [B, N, P^2 * C_out]
+        # 5. Final Layer Head: [B, N, D] -> [B, N, P^2 * C_out]
         self.final_layer = FinalLayer(
             hidden_size=hidden_size,
             patch_size=patch_size,
             out_channels=out_channels,
         )
 
-        # 7. Unpatchify Module: [B, N, P^2 * C_out] -> [B, C_out, H, W]
+        # 6. Unpatchify Module: [B, N, P^2 * C_out] -> [B, C_out, H, W]
         self.unpatchify = Unpatchify(
             patch_size=patch_size,
             out_channels=out_channels,
@@ -153,22 +147,20 @@ class DiT(nn.Module):
             num_heads=model_params.get("num_heads", 6),
             mlp_ratio=model_params.get("mlp_ratio", 4.0),
             time_scale=model_params.get("time_scale", 1000.0),
-            use_text_condition=model_params.get("use_text_condition", False),
-            text_dim=model_params.get("text_dim", 0),
         )
 
     def forward(
         self,
         x: torch.Tensor,
         t: torch.Tensor,
-        y: Optional[torch.Tensor] = None,
+        text_embed: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Forward pass of the complete DiT model.
 
         Args:
             x (torch.Tensor): Noisy latent image tensor [B, in_channels, H, W].
             t (torch.Tensor): Continuous flow timestep tensor [B] with values in [0, 1].
-            y (Optional[torch.Tensor]): Optional text conditioning embeddings [B, text_dim].
+            text_embed (Optional[torch.Tensor]): Optional pooled text condition embeddings [B, hidden_size].
 
         Returns:
             torch.Tensor: Predicted velocity field tensor [B, out_channels, H, W].
@@ -192,8 +184,18 @@ class DiT(nn.Module):
 
         # 3. Compute condition vector c: [B, D]
         c = self.t_embedder(t)
-        if self.y_embedder is not None and y is not None:
-            c = c + self.y_embedder(y)
+        if text_embed is not None:
+            if text_embed.shape[0] != B:
+                raise ValueError(
+                    f"Batch size mismatch: input x has batch size {B}, "
+                    f"but text_embed has batch size {text_embed.shape[0]}."
+                )
+            if text_embed.shape[1] != self.hidden_size:
+                raise ValueError(
+                    f"Expected text_embed feature dimension {self.hidden_size}, "
+                    f"but got {text_embed.shape[1]} (shape: {text_embed.shape})."
+                )
+            c = c + text_embed
 
         # 4. Pass through depth transformer blocks with adaLN-Zero modulation
         for block in self.blocks:

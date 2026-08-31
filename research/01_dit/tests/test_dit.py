@@ -10,13 +10,13 @@ from src.dit import DiT
 
 def test_dit_complete_forward_shape():
     """Verify [B, 4, 32, 32] + [B] -> [B, 4, 32, 32] end-to-end tensor pipeline."""
-    B, C, H, W = 2, 4, 32, 32
+    B, C, H, W, D = 2, 4, 32, 32, 384
     model = DiT(
         in_channels=C,
         out_channels=C,
         latent_size=H,
         patch_size=2,
-        hidden_size=384,
+        hidden_size=D,
         depth=8,
         num_heads=6,
         mlp_ratio=4.0,
@@ -24,9 +24,15 @@ def test_dit_complete_forward_shape():
 
     x = torch.randn(B, C, H, W)
     t = torch.tensor([0.2, 0.8])
-    v_pred = model(x, t)
 
-    assert v_pred.shape == (B, C, H, W), f"Expected shape {(B, C, H, W)}, but got {v_pred.shape}"
+    # 1. Unconditional / default text_embed=None
+    v_uncond = model(x, t)
+    assert v_uncond.shape == (B, C, H, W), f"Expected shape {(B, C, H, W)}, but got {v_uncond.shape}"
+
+    # 2. Conditioned with pooled text_embed [B, D]
+    text_embed = torch.randn(B, D)
+    v_cond = model(x, t, text_embed=text_embed)
+    assert v_cond.shape == (B, C, H, W), f"Expected shape {(B, C, H, W)}, but got {v_cond.shape}"
 
 
 def test_dit_exact_model_parameter_count():
@@ -78,24 +84,27 @@ def test_dit_exact_model_parameter_count():
 
 def test_dit_strict_zero_initialization():
     """Verify that at step 0, the complete DiT model outputs identically zero velocity fields."""
-    B, C, H, W = 2, 4, 32, 32
+    B, C, H, W, D = 2, 4, 32, 32, 384
     model = DiT(
         in_channels=C,
         out_channels=C,
         latent_size=H,
         patch_size=2,
-        hidden_size=384,
+        hidden_size=D,
         depth=8,
         num_heads=6,
     )
 
     x = torch.randn(B, C, H, W)
     t = torch.tensor([0.1, 0.9])
-    v_pred = model(x, t)
+    text_embed = torch.randn(B, D)
 
-    assert torch.equal(v_pred, torch.zeros_like(v_pred)), (
-        f"Model output is not exactly 0.0 at initialization! Max abs: {v_pred.abs().max().item()}"
-    )
+    # Both unconditional and conditioned forward passes must produce exact zero velocity at init
+    v_pred_uncond = model(x, t)
+    assert torch.equal(v_pred_uncond, torch.zeros_like(v_pred_uncond))
+
+    v_pred_cond = model(x, t, text_embed=text_embed)
+    assert torch.equal(v_pred_cond, torch.zeros_like(v_pred_cond))
 
 
 def test_dit_blocks_count_and_types():
@@ -106,7 +115,7 @@ def test_dit_blocks_count_and_types():
         assert isinstance(block, DiTBlock), f"Block {idx} is not an instance of DiTBlock."
 
 
-def test_dit_condition_sensitivity_after_opening_gates():
+def test_dit_timestep_condition_sensitivity_after_opening_gates():
     """Verify that once weights are perturbed from zero, different timesteps produce distinct outputs."""
     model = DiT(depth=8)
 
@@ -129,6 +138,66 @@ def test_dit_condition_sensitivity_after_opening_gates():
     )
 
 
+def test_dit_pooled_text_conditioning_sensitivity():
+    """Verify that identical (x, t) with different pooled text conditions produce distinct outputs."""
+    model = DiT(depth=8)
+
+    # Open gates
+    for block in model.blocks:
+        nn.init.normal_(block.adaLN_modulation.linear.weight, std=0.02)
+    nn.init.normal_(model.final_layer.linear.weight, std=0.02)
+    nn.init.normal_(model.final_layer.adaLN_modulation[-1].weight, std=0.02)
+
+    x = torch.randn(1, 4, 32, 32)
+    t = torch.tensor([0.5])
+    text_embed_1 = torch.randn(1, 384)
+    text_embed_2 = torch.randn(1, 384)
+
+    with torch.no_grad():
+        v1 = model(x, t, text_embed=text_embed_1)
+        v2 = model(x, t, text_embed=text_embed_2)
+
+    assert not torch.allclose(v1, v2, atol=1e-4), (
+        "Model outputs with different text embeddings are unexpectedly identical."
+    )
+
+
+def test_dit_zero_text_condition_equivalence():
+    """Verify that text_embed=torch.zeros(B, D) produces byte-for-byte identical output to text_embed=None."""
+    model = DiT(depth=4)
+
+    # Open gates
+    for block in model.blocks:
+        nn.init.normal_(block.adaLN_modulation.linear.weight, std=0.02)
+    nn.init.normal_(model.final_layer.linear.weight, std=0.02)
+
+    x = torch.randn(2, 4, 32, 32)
+    t = torch.tensor([0.3, 0.7])
+
+    with torch.no_grad():
+        v_none = model(x, t, text_embed=None)
+        v_zeros = model(x, t, text_embed=torch.zeros(2, 384))
+
+    assert torch.equal(v_none, v_zeros), (
+        "text_embed=zeros did not produce byte-for-byte identical output to text_embed=None."
+    )
+
+
+def test_dit_text_embed_dimension_and_batch_errors():
+    """Verify ValueError is raised on mismatched text_embed feature dimension or batch size."""
+    model = DiT(depth=2, hidden_size=384)
+    x = torch.randn(2, 4, 32, 32)
+    t = torch.tensor([0.5, 0.5])
+
+    # 1. Invalid feature dimension (256 instead of 384)
+    with pytest.raises(ValueError, match="Expected text_embed feature dimension"):
+        model(x, t, text_embed=torch.randn(2, 256))
+
+    # 2. Batch size mismatch (4 instead of 2)
+    with pytest.raises(ValueError, match="Batch size mismatch"):
+        model(x, t, text_embed=torch.randn(4, 384))
+
+
 def test_dit_batch_size_variations():
     """Verify DiT executes across variable batch sizes B in {1, 2, 4}."""
     model = DiT(depth=4)
@@ -138,7 +207,8 @@ def test_dit_batch_size_variations():
         for B in [1, 2, 4]:
             x = torch.randn(B, 4, 32, 32)
             t = torch.linspace(0.0, 1.0, steps=B)
-            out = model(x, t)
+            text_embed = torch.randn(B, 384)
+            out = model(x, t, text_embed=text_embed)
             assert out.shape == (B, 4, 32, 32)
 
 
@@ -167,12 +237,14 @@ def test_dit_full_backward_gradient_flow_after_update():
 
     x = torch.randn(2, 4, 32, 32, requires_grad=True)
     t = torch.tensor([0.25, 0.75])
+    text_embed = torch.randn(2, 128, requires_grad=True)
 
-    out = model(x, t)
+    out = model(x, t, text_embed=text_embed)
     loss = out.sum()
     loss.backward()
 
     assert x.grad is not None and torch.isfinite(x.grad).all()
+    assert text_embed.grad is not None and torch.isfinite(text_embed.grad).all()
 
     for name, param in model.named_parameters():
         if param.requires_grad:
@@ -186,7 +258,8 @@ def test_dit_dtypes():
         model = DiT(depth=2, hidden_size=128, num_heads=2).to(dtype=dtype)
         x = torch.randn(1, 4, 32, 32, dtype=dtype)
         t = torch.tensor([0.5], dtype=dtype)
-        out = model(x, t)
+        text_embed = torch.randn(1, 128, dtype=dtype)
+        out = model(x, t, text_embed=text_embed)
         assert out.dtype == dtype, f"Expected {dtype}, got {out.dtype}"
 
 
