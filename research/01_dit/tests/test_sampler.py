@@ -183,3 +183,44 @@ def test_sampler_real_untrained_dit_zero_init_behavior():
     assert torch.equal(out, noise), (
         "Real untrained zero-initialized DiT must output zero velocity, leaving initial noise unchanged."
     )
+
+
+class GradSpyModel(nn.Module):
+    """Mock model that records whether autograd is enabled during each evaluation."""
+    def __init__(self) -> None:
+        super().__init__()
+        self.grad_enabled_records: List[bool] = []
+
+    def forward(self, x: torch.Tensor, t: torch.Tensor, text_embed: Optional[torch.Tensor] = None) -> torch.Tensor:
+        self.grad_enabled_records.append(torch.is_grad_enabled())
+        return torch.randn_like(x)
+
+
+def test_sampler_gradient_disabled_guarantee():
+    """Verify that Euler sampling strictly executes with autograd disabled on every step.
+
+    Even if the initial noise tensor has requires_grad=True, the sampled output must
+    have requires_grad=False and no attached autograd computation graph.
+    """
+    spy_model = GradSpyModel()
+    num_steps = 10
+    sampler = EulerSampler(num_steps=num_steps)
+
+    # Initial noise with requires_grad=True
+    noise = torch.randn(2, 4, 32, 32, requires_grad=True)
+
+    out, trajectory = sampler.sample(spy_model, noise, return_trajectory=True)
+
+    # 1. Spy model observed torch.is_grad_enabled() == False on all steps
+    assert len(spy_model.grad_enabled_records) == num_steps
+    assert all(record is False for record in spy_model.grad_enabled_records), (
+        "Autograd was not disabled during all Euler integration steps!"
+    )
+
+    # 2. Sampled output has requires_grad == False and grad_fn is None
+    assert out.requires_grad is False, "Sampled output tensor must have requires_grad=False."
+    assert out.grad_fn is None, "Sampled output tensor must not have an attached grad_fn."
+
+    for state in trajectory:
+        assert state.requires_grad is False
+        assert state.grad_fn is None

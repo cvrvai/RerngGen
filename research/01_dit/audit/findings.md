@@ -16,4 +16,5 @@
 | 2026-08-31 | Step 11: FlowMatching | PASSED | Pair Programming | x_t=(1-t)x0+tx1, v=x1-x0, MSE loss, finite diff & analytical agreement verified, 11/11 tests passed |
 | 2026-08-31 | Step 12: TrainingSmoke | PASSED | Pair Programming | 100-step overfit: loss 2.005 -> 0.000082 (99.9959% reduction in 2.89s on CUDA), 2/2 tests passed |
 | 2026-08-31 | Step 13: CheckpointIntegrity | PASSED | Pair Programming | Atomic save/load, exact bitwise model, optimizer, step & RNG state restoration, interrupted=uninterrupted equivalence verified, 5/5 tests passed |
-| 2026-08-31 | Step 14: EulerSampler | PASSED | Pair Programming | Forward ODE integration t=0 -> 1, +dt*v update, constant velocity invariance & zero-init identity verified, 8/8 tests passed |
+| 2026-08-31 | Step 14: EulerSampler | PASSED | Pair Programming | Forward ODE integration t=0 -> 1, +dt*v update, autograd disabled guarantee, constant velocity invariance & zero-init identity verified, 9/9 tests passed |
+| 2026-08-31 | Step 15: MultiSampleOverfit | PASSED | Pair Programming | 4-sample conditional overfit: 83.17% loss reduction, condition selectivity verified, matching MSE (0.38-0.40) << noise MSE (1.76-6.20) & mismatched MSE (2.58-20.18), 1/1 tests passed |
