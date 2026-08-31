@@ -65,7 +65,7 @@ RerngGen/
 ### 1. Environment Setup
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/RerngGen.git
+git clone https://github.com/cvrvai/RerngGen.git
 cd RerngGen
 
 # Create virtual environment and install dependencies
