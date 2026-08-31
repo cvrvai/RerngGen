@@ -13,7 +13,7 @@
 - [x] Step 9: Final Layer Head
 - [x] Step 10: Complete DiT Assembly & Parameter Audit
 - [x] Step 11: Flow Matching Objective
-- [ ] Step 12: Forward/Backward Training Smoke Test
+- [x] Step 12: Forward/Backward Training Smoke Test
 - [ ] Step 13: Checkpoint Save & Resume Integrity
 - [ ] Step 14: Deterministic Euler ODE Sampler
 - [ ] Step 15: Tiny Dataset Overfit & Convergence Test

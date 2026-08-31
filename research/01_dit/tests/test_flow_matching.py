@@ -177,10 +177,41 @@ def test_flow_matching_invalid_shapes():
         objective(model, torch.randn(2, 4, 32, 32), t=torch.tensor([0.1, 0.2, 0.3, 0.4]))
 
 
-def test_flow_matching_backward_gradient_flow():
-    """Verify backward loss backpropagates finite gradients into model parameters."""
+def test_flow_matching_first_step_gradient_at_zero_init():
+    """Verify first-step gradient mechanics under strict zero initialization.
+
+    At initialization:
+    - FinalLayer linear weights and biases receive non-zero learning signals directly from MSE loss.
+    - Earlier layers receive 0.0 gradients because W_final = 0 blocks backprop.
+    """
     model = DiT(depth=2, hidden_size=128, num_heads=2)
-    # Open gates to allow active gradient propagation
+    objective = FlowMatchingObjective()
+
+    x_data = torch.randn(2, 4, 32, 32)
+    loss, _ = objective(model, x_data)
+    loss.backward()
+
+    # FinalLayer linear projection receives immediate non-zero gradients
+    assert model.final_layer.linear.weight.grad is not None
+    assert torch.isfinite(model.final_layer.linear.weight.grad).all()
+    assert (model.final_layer.linear.weight.grad != 0).any(), "W_final must receive non-zero gradient at step 0."
+
+    assert model.final_layer.linear.bias.grad is not None
+    assert torch.isfinite(model.final_layer.linear.bias.grad).all()
+    assert (model.final_layer.linear.bias.grad != 0).any(), "bias_final must receive non-zero gradient at step 0."
+
+    # Earlier layers have exactly 0.0 gradient on the very first backward pass
+    assert model.blocks[0].attn.qkv.weight.grad is not None
+    assert torch.equal(
+        model.blocks[0].attn.qkv.weight.grad,
+        torch.zeros_like(model.blocks[0].attn.qkv.weight.grad),
+    ), "Earlier layers must have 0.0 gradient at step 0 due to W_final=0."
+
+
+def test_flow_matching_backward_gradient_flow_after_update():
+    """Verify backward loss backpropagates finite gradients into all model parameters once weights are active."""
+    model = DiT(depth=2, hidden_size=128, num_heads=2)
+    # Open gates and output projection to allow active gradient propagation
     for block in model.blocks:
         nn.init.normal_(block.adaLN_modulation.linear.weight, std=0.02)
     nn.init.normal_(model.final_layer.linear.weight, std=0.02)
@@ -202,3 +233,4 @@ def test_flow_matching_backward_gradient_flow():
         if param.requires_grad:
             assert param.grad is not None, f"Parameter {name} has no gradient."
             assert torch.isfinite(param.grad).all(), f"Parameter {name} has non-finite gradient."
+            assert (param.grad != 0).any(), f"Parameter {name} should have non-zero gradient after activation."
