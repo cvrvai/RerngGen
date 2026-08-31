@@ -10,6 +10,7 @@ model:
   mlp_ratio: 4.0
   use_text_condition: false
   text_dim: 0
+  time_scale: 1000.0
 
 training:
   batch_size: 8

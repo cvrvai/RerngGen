@@ -45,34 +45,77 @@ def test_timestep_embedding_parameter_count():
     )
 
 
+def test_pre_mlp_sinusoidal_phase_variation_with_time_scale():
+    """Verify that t in [0.0, 0.25, 0.50, 0.75, 1.0] produces finite, smooth, but distinct pre-MLP features."""
+    t_steps = torch.tensor([0.0, 0.25, 0.50, 0.75, 1.0])
+    freq_dim = 256
+    time_scale = 1000.0
+
+    # Pre-MLP raw sinusoidal representations
+    sin_feats = sinusoidal_timestep_embedding(
+        timesteps=t_steps,
+        embedding_dim=freq_dim,
+        time_scale=time_scale,
+    )
+
+    assert sin_feats.shape == (5, freq_dim)
+    assert torch.isfinite(sin_feats).all(), "Non-finite values detected in sinusoidal embeddings."
+
+    # Compute pairwise cosine similarities between all 5 time steps
+    norm_feats = sin_feats / sin_feats.norm(dim=-1, keepdim=True)
+    sim_matrix = torch.matmul(norm_feats, norm_feats.T)
+
+    # 1. Diagonal must be exactly 1.0 (self-similarity)
+    diag = torch.diagonal(sim_matrix)
+    assert torch.allclose(diag, torch.ones_like(diag), atol=1e-5)
+
+    # 2. Distinct quarters across [0, 1] must have meaningful separation (max off-diagonal < 0.90)
+    # Check that t=0.0, t=0.25, t=0.5, t=0.75, t=1.0 are distinct
+    for i in range(5):
+        for j in range(5):
+            if abs(i - j) >= 1:
+                assert sim_matrix[i, j].item() < 0.90, (
+                    f"Sinusoidal features for t={t_steps[i].item()} and t={t_steps[j].item()} "
+                    f"are too similar (similarity={sim_matrix[i, j].item():.4f}). "
+                    f"time_scale={time_scale} is needed to generate rich phase dynamics."
+                )
+
+    # 3. Smoothness check: adjacent steps (e.g. step distance 0.25) have higher similarity than distant steps (distance 1.0)
+    sim_adj = sim_matrix[0, 1].item()  # distance 0.25
+    sim_far = sim_matrix[0, 4].item()  # distance 1.0
+    assert sim_adj > sim_far, (
+        f"Expected adjacent step similarity ({sim_adj:.4f}) > distant step similarity ({sim_far:.4f})"
+    )
+
+
 def test_timestep_embedding_smoothness_and_uniqueness():
-    """Verify continuous smooth transition across time t in [0, 1]."""
-    embedder = TimestepEmbedder(hidden_size=384)
+    """Verify continuous smooth transition across time t in [0, 1] through full MLP."""
+    embedder = TimestepEmbedder(hidden_size=384, time_scale=1000.0)
     embedder.eval()
 
     with torch.no_grad():
         t_near_1 = torch.tensor([0.50])
-        t_near_2 = torch.tensor([0.51])
+        t_near_2 = torch.tensor([0.501])  # Delta t = 0.001 (1 step in 1000 time_scale)
         t_far = torch.tensor([0.05])
 
         emb_near_1 = embedder(t_near_1)
         emb_near_2 = embedder(t_near_2)
         emb_far = embedder(t_far)
 
-        # Normalize to compute cosine similarities
         sim_near = torch.cosine_similarity(emb_near_1, emb_near_2).item()
         sim_far = torch.cosine_similarity(emb_near_1, emb_far).item()
 
-        # Close timesteps must have higher similarity than distant timesteps
+        # Very close timesteps must have higher similarity than distant timesteps
         assert sim_near > sim_far, (
             f"Expected near similarity ({sim_near:.4f}) > far similarity ({sim_far:.4f})"
         )
         assert sim_near > 0.95, f"Expected close timesteps to have high similarity, got {sim_near:.4f}"
 
 
+
 def test_timestep_embedding_gradient_flow():
     """Verify backward gradient flow computes finite gradients for all MLP parameters."""
-    embedder = TimestepEmbedder(hidden_size=384)
+    embedder = TimestepEmbedder(hidden_size=384, time_scale=1000.0)
     t = torch.tensor([0.1, 0.4, 0.7, 0.9], requires_grad=True)
 
     out = embedder(t)
@@ -90,7 +133,7 @@ def test_timestep_embedding_gradient_flow():
 def test_timestep_embedding_dtypes():
     """Verify module functions with float16, bfloat16, float32, and float64."""
     for dtype in [torch.float16, torch.bfloat16, torch.float32, torch.float64]:
-        embedder = TimestepEmbedder(hidden_size=384).to(dtype=dtype)
+        embedder = TimestepEmbedder(hidden_size=384, time_scale=1000.0).to(dtype=dtype)
         t = torch.tensor([0.25, 0.75])
         out = embedder(t)
         assert out.dtype == dtype, f"Expected output dtype {dtype}, got {out.dtype}"

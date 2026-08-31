@@ -15,19 +15,22 @@ def sinusoidal_timestep_embedding(
     timesteps: torch.Tensor,
     embedding_dim: int = 256,
     max_period: float = 10000.0,
+    time_scale: float = 1.0,
 ) -> torch.Tensor:
     """Computes sinusoidal frequency features for scalar timesteps.
 
     Math:
+        scaled_t = timesteps * time_scale
         half_dim = embedding_dim // 2
         freqs = exp(-log(max_period) * arange(half_dim) / half_dim)
-        args = timesteps * freqs
+        args = scaled_t * freqs
         embedding = [cos(args), sin(args)]
 
     Args:
         timesteps (torch.Tensor): 1D tensor of scalar timesteps [B] or [B, 1].
         embedding_dim (int): Dimensionality of the sinusoidal feature representation.
         max_period (float): Maximum frequency wavelength constant. Default: 10000.0.
+        time_scale (float): Scaling factor to expand normalized [0, 1] time into rich phase variation. Default: 1.0.
 
     Returns:
         torch.Tensor: Sinusoidal embeddings of shape [B, embedding_dim].
@@ -39,6 +42,9 @@ def sinusoidal_timestep_embedding(
             f"Expected timesteps tensor to have shape [B] or [B, 1], but got {timesteps.shape}."
         )
 
+    # Scale continuous normalized [0, 1] time to produce strong phase dynamics
+    scaled_timesteps = timesteps.float() * time_scale
+
     half = embedding_dim // 2
     # Frequency bands in log-linear space
     freqs = torch.exp(
@@ -47,7 +53,7 @@ def sinusoidal_timestep_embedding(
         / half
     )
 
-    args = timesteps[:, None].float() * freqs[None, :]
+    args = scaled_timesteps[:, None] * freqs[None, :]
     embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
 
     # Pad if odd dimension requested
@@ -69,6 +75,7 @@ class TimestepEmbedder(nn.Module):
         hidden_size (int): Target Transformer embedding dimension D (e.g. 384).
         frequency_embedding_size (int): Dimension of initial sinusoidal features (default: 256).
         max_period (float): Maximum wavelength for sinusoidal frequencies. Default: 10000.0.
+        time_scale (float): Scaling factor applied to normalized [0, 1] time before sinusoidal projection. Default: 1000.0.
     """
 
     def __init__(
@@ -76,11 +83,13 @@ class TimestepEmbedder(nn.Module):
         hidden_size: int = 384,
         frequency_embedding_size: int = 256,
         max_period: float = 10000.0,
+        time_scale: float = 1000.0,
     ) -> None:
         super().__init__()
         self.hidden_size = hidden_size
         self.frequency_embedding_size = frequency_embedding_size
         self.max_period = max_period
+        self.time_scale = time_scale
 
         self.mlp = nn.Sequential(
             nn.Linear(frequency_embedding_size, hidden_size, bias=True),
@@ -101,16 +110,17 @@ class TimestepEmbedder(nn.Module):
         """Forward pass.
 
         Args:
-            t (torch.Tensor): Continuous or discrete timesteps of shape [B] or [B, 1].
+            t (torch.Tensor): Continuous timesteps in [0, 1] of shape [B] or [B, 1].
 
         Returns:
             torch.Tensor: Timestep conditioning vectors of shape [B, hidden_size].
         """
-        # 1. Project scalar t -> sinusoidal feature vector [B, frequency_embedding_size]
+        # 1. Project scalar t -> sinusoidal feature vector [B, frequency_embedding_size] with time_scale
         t_freq = sinusoidal_timestep_embedding(
             timesteps=t,
             embedding_dim=self.frequency_embedding_size,
             max_period=self.max_period,
+            time_scale=self.time_scale,
         )
 
         # 2. Match MLP parameter dtype and compute [B, frequency_embedding_size] -> [B, hidden_size]
