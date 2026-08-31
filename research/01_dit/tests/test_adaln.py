@@ -88,10 +88,46 @@ def test_residual_gating_identity():
     assert torch.equal(x_out, x), "Zero gate alpha did not preserve exact residual identity."
 
 
-def test_adaln_zero_gradient_flow():
-    """Verify gradients propagate backwards through AdaLNZero into conditioning vector c and weights."""
+def test_adaln_zero_gradient_at_strict_initialization():
+    """Verify gradient behavior at exact zero-initialization (W=0, b=0).
+
+    Math:
+        y = W * SiLU(c) + b where W=0
+        dL/dW = dL/dy * SiLU(c).T != 0 (Linear weights receive non-zero gradient)
+        dL/db = dL/dy != 0 (Linear bias receives non-zero gradient)
+        dL/dc = W.T * dL/dy * SiLU'(c) = 0 * dL/dy = 0 (c.grad is exactly 0 due to W=0)
+    """
     adaln = AdaLNZero(hidden_size=384)
-    # Give non-zero weights for gradient test
+    # Ensure fresh zero-init state
+    assert torch.equal(adaln.linear.weight, torch.zeros_like(adaln.linear.weight))
+    assert torch.equal(adaln.linear.bias, torch.zeros_like(adaln.linear.bias))
+
+    c = torch.randn(2, 384, requires_grad=True)
+    chunks = adaln(c)
+    loss = sum(chunk.sum() for chunk in chunks)
+    loss.backward()
+
+    # 1. Weights and biases receive non-zero learning signal from loss
+    assert adaln.linear.weight.grad is not None
+    assert torch.isfinite(adaln.linear.weight.grad).all()
+    assert (adaln.linear.weight.grad != 0).any(), "Linear weight grad should be non-zero."
+
+    assert adaln.linear.bias.grad is not None
+    assert torch.isfinite(adaln.linear.bias.grad).all()
+    assert (adaln.linear.bias.grad != 0).any(), "Linear bias grad should be non-zero."
+
+    # 2. c.grad is finite and exactly 0 at initialization due to W=0 multiplication
+    assert c.grad is not None
+    assert torch.isfinite(c.grad).all()
+    assert torch.equal(c.grad, torch.zeros_like(c.grad)), (
+        "c.grad must be exactly 0.0 at zero-initialization because W=0."
+    )
+
+
+def test_adaln_zero_gradient_after_weight_update():
+    """Verify that once weights are non-zero, gradients propagate backwards into c."""
+    adaln = AdaLNZero(hidden_size=384)
+    # Simulate updated non-zero weights
     torch.nn.init.normal_(adaln.linear.weight, std=0.02)
     torch.nn.init.zeros_(adaln.linear.bias)
 
@@ -101,8 +137,8 @@ def test_adaln_zero_gradient_flow():
     loss.backward()
 
     assert c.grad is not None
-    assert torch.isfinite(c.grad).all(), "Non-finite gradient in condition vector c."
-    assert torch.isfinite(adaln.linear.weight.grad).all(), "Non-finite gradient in linear weight."
+    assert torch.isfinite(c.grad).all()
+    assert (c.grad != 0).any(), "c.grad must be non-zero once weights are non-zero."
 
 
 def test_adaln_zero_dtypes():
