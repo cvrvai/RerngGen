@@ -4,7 +4,7 @@
 - [x] Step 0: Repository & Config Setup
 - [x] Step 1: Patchify & PatchEmbed
 - [x] Step 2: Unpatchify
-- [ ] Step 3: 2D Positional Embeddings
+- [x] Step 3: 2D Positional Embeddings
 - [ ] Step 4: Timestep Embedding MLP
 - [ ] Step 5: Multi-Head Self-Attention
 - [ ] Step 6: Transformer MLP
