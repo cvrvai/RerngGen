@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
-from PIL import Image
+from PIL import Image, ImageOps
 from rernggen.data.importer import compute_sha256
 from rernggen.data.schema import PreprocessingReport, ProcessedRecord
 
@@ -23,10 +23,12 @@ def preprocess_image_to_square(
     """Transforms an image to exact target_size x target_size RGB via aspect-preserving resize + center crop.
 
     Algorithm:
-        1. Convert mode to RGB (handling RGBA/LA by compositing on white background).
-        2. Compute scaling factor such that the shortest side becomes target_size.
-        3. Resize image using high-quality resampling filter (LANCZOS).
-        4. Deterministically extract a centered target_size x target_size crop.
+        1. Apply EXIF orientation normalization via ImageOps.exif_transpose.
+        2. Convert color mode to RGB (compositing RGBA/LA onto white background).
+        3. Compute scaling factor such that the shortest side becomes target_size,
+           preserving aspect ratio up to unavoidable integer-pixel rounding during raster resizing.
+        4. Resize image using high-quality resampling filter (LANCZOS).
+        5. Deterministically extract a centered target_size x target_size crop.
 
     Args:
         img (Image.Image): Input PIL Image.
@@ -38,6 +40,8 @@ def preprocess_image_to_square(
             - Preprocessed PIL Image [target_size, target_size, RGB].
             - Transformation metadata dictionary.
     """
+    # 1. Normalize EXIF orientation tags before geometry calculation
+    img = ImageOps.exif_transpose(img) or img
     orig_w, orig_h = img.size
 
     # 1. Color space conversion to RGB

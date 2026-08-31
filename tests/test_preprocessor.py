@@ -103,6 +103,24 @@ def test_preprocess_color_modes_rgba_grayscale_cmyk():
     assert proc_cmyk.mode == "RGB"
 
 
+def test_preprocess_image_exif_orientation():
+    """Verify EXIF orientation tag (e.g. 6: Rotate 90 CW) is normalized before geometry calculation."""
+    img = Image.new("RGB", (400, 200), color=(120, 80, 40))
+    exif = img.getexif()
+    exif[0x0112] = 6  # Orientation tag 6: Rotated 90 CW (transposed to 200x400 portrait)
+
+    proc_img, meta = preprocess_image_to_square(img, target_size=256)
+
+    assert proc_img.size == (256, 256)
+    # Effective dimensions after EXIF transpose: 200 width x 400 height
+    assert meta["original_width"] == 200
+    assert meta["original_height"] == 400
+    assert meta["resized_width"] == 256
+    assert meta["resized_height"] == 512
+    assert meta["crop_top"] == 128
+    assert meta["crop_left"] == 0
+
+
 def test_preprocessor_end_to_end_dataset(tmp_path: Path):
     """Verifies end-to-end dataset preprocessing, metadata serialization, and idempotency."""
     source_dir = tmp_path / "raw_source"
