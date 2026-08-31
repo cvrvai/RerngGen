@@ -1,0 +1,18 @@
+# Debug Configuration for DiT Step-by-Step Validation & Smoke Testing
+model:
+  in_channels: 4
+  out_channels: 4
+  latent_size: 32 # corresponds to 256x256 image with f=8 VAE
+  patch_size: 2
+  hidden_size: 384
+  depth: 8
+  num_heads: 6
+  mlp_ratio: 4.0
+  use_text_condition: false
+  text_dim: 0
+
+training:
+  batch_size: 2
+  learning_rate: 1.0e-4
+  weight_decay: 0.0
+  grad_clip: 1.0
