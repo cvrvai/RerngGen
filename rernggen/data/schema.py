@@ -237,3 +237,101 @@ class LatentCacheReport:
             "============================================================"
         )
 
+
+@dataclass
+class CaptionRecord:
+    """Schema for a single caption entry in captions manifest.jsonl."""
+
+    image_id: str
+    dataset_id: str
+    caption: str
+    caption_source: str = "manual"
+    caption_version: str = "captions_v001"
+    caption_sha256: str = ""
+    language: str = "en"
+    review_status: str = "reviewed"
+    training_allowed: Optional[bool] = None
+    commercial_allowed: Optional[bool] = None
+    license_id: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Converts dataclass record to a JSON-serializable dictionary."""
+        return asdict(self)
+
+
+@dataclass
+class TextEmbeddingRecord:
+    """Schema for a single frozen text encoder pooled embedding in cache manifest.jsonl."""
+
+    image_id: str
+    dataset_id: str
+    dataset_version: str
+    caption_version: str
+    caption_sha256: str
+    text_encoder_id: str
+    text_encoder_revision: str
+    text_encoder_weights_sha256: str
+    text_encoder_config_sha256: str
+    tokenizer_class: str
+    pooling_policy: str
+    embedding_shape: List[int]
+    embedding_dtype: str
+    embedding_sha256: str
+    embedding_relative_path: str
+    min_val: float
+    max_val: float
+    mean_val: float
+    std_val: float
+    l2_norm: float
+    training_allowed: Optional[bool] = None
+    commercial_allowed: Optional[bool] = None
+    license_id: Optional[str] = None
+    cache_version: str = "clip_b32_v001"
+    status: str = "CACHED"
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Converts dataclass record to a JSON-serializable dictionary."""
+        return asdict(self)
+
+
+@dataclass
+class TextEmbeddingCacheReport:
+    """Summary report produced upon completion of frozen text embedding cache generation."""
+
+    dataset_id: str
+    caption_version: str
+    cache_version: str
+    cache_dir: Path
+    manifest_path: Path
+    total_captions_in_dataset: int = 0
+    embeddings_created: int = 0
+    valid_cache_hits: int = 0
+    failures: int = 0
+    total_cache_bytes: int = 0
+    elapsed_time_seconds: float = 0.0
+    text_encoder_provenance: Dict[str, Any] = field(default_factory=dict)
+    records: List[TextEmbeddingRecord] = field(default_factory=list)
+    failure_details: List[Dict[str, str]] = field(default_factory=list)
+
+    def summary(self) -> str:
+        """Generates a human-readable formatted summary string."""
+        bytes_formatted = ImportReport._format_bytes(self.total_cache_bytes)
+        return (
+            "============================================================\n"
+            "TEXT EMBEDDING CACHE GENERATION COMPLETE\n"
+            "============================================================\n"
+            f"Dataset ID:            {self.dataset_id}\n"
+            f"Caption Version:       {self.caption_version}\n"
+            f"Cache Version:         {self.cache_version}\n"
+            f"Cache Directory:       {self.cache_dir}\n"
+            f"Manifest Path:         {self.manifest_path}\n"
+            f"Total Captions:        {self.total_captions_in_dataset}\n"
+            f"Embeddings Created:    {self.embeddings_created}\n"
+            f"Valid Cache Hits:      {self.valid_cache_hits}\n"
+            f"Failures:              {self.failures}\n"
+            f"Total Cache Bytes:     {bytes_formatted}\n"
+            f"Elapsed Time:          {self.elapsed_time_seconds:.2f}s\n"
+            "============================================================"
+        )
+
+

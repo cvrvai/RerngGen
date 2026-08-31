@@ -148,6 +148,7 @@ class LatentCacheGenerator:
                 )
                 continue
 
+            tmp_latent_file = None
             try:
                 # 1. Load image and normalize to [-1.0, 1.0]
                 with Image.open(img_path) as pil_img:
@@ -173,6 +174,7 @@ class LatentCacheGenerator:
                 tmp_latent_file = cache_dir / f"{image_id}_tmp_{os.getpid()}_{time.time_ns()}.safetensors"
                 save_file({"latent": latent_tensor}, tmp_latent_file)
                 os.replace(tmp_latent_file, latent_file)
+                tmp_latent_file = None
 
                 latent_size = latent_file.stat().st_size
                 report.total_cache_bytes += latent_size
@@ -211,6 +213,8 @@ class LatentCacheGenerator:
                 report.latents_created += 1
 
             except Exception as e:
+                if tmp_latent_file and tmp_latent_file.exists():
+                    tmp_latent_file.unlink(missing_ok=True)
                 report.failures += 1
                 report.failure_details.append({"image_id": image_id, "error": str(e)})
 

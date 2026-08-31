@@ -194,6 +194,100 @@ def test_latent_cache_invalidated_when_source_image_changes(tmp_path: Path):
     assert rep.valid_cache_hits == 1
 
 
+def test_latent_cache_invalidated_when_vae_identity_changes(tmp_path: Path):
+    """Verify that any change in VAE weights, config hash, revision, or scaling factor invalidates cache."""
+    dataset_id = "test_vae_invalidation_v001"
+    prep_version = "square256_center_v001"
+    cache_version = "vae_sd_mse_square256_v001"
+
+    create_synthetic_processed_dataset(tmp_path, dataset_id, prep_version, count=2)
+
+    # 1. Initial cache under VAE identity A
+    spec_a = VAESpec(
+        model_id="mock_vae_a",
+        revision="rev_a",
+        weights_sha256="weights_hash_aaa",
+        config_sha256="config_hash_aaa",
+        scaling_factor=0.18215,
+        posterior_policy="posterior_mode",
+    )
+    adapter_a = AutoencoderKLAdapter(MockVAE(), spec=spec_a)
+    gen_a = LatentCacheGenerator(adapter_a, cache_version=cache_version, dataset_root=tmp_path)
+    rep_a = gen_a.generate_cache(dataset_id=dataset_id, preprocessing_version=prep_version)
+    assert rep_a.latents_created == 2
+
+    # 2. Run under VAE identity B (different weights hash) -> MUST NOT accept old latents
+    spec_b = VAESpec(
+        model_id="mock_vae_b",
+        revision="rev_b",
+        weights_sha256="weights_hash_bbb",  # Changed!
+        config_sha256="config_hash_aaa",
+        scaling_factor=0.18215,
+        posterior_policy="posterior_mode",
+    )
+    adapter_b = AutoencoderKLAdapter(MockVAE(), spec=spec_b)
+    gen_b = LatentCacheGenerator(adapter_b, cache_version=cache_version, dataset_root=tmp_path)
+    rep_b = gen_b.generate_cache(dataset_id=dataset_id, preprocessing_version=prep_version)
+    assert rep_b.latents_created == 2, "Changed VAE weights hash must trigger complete re-encoding!"
+    assert rep_b.valid_cache_hits == 0
+
+    # 3. Run under VAE identity C (different scaling factor) -> MUST NOT accept old latents
+    spec_c = VAESpec(
+        model_id="mock_vae_c",
+        revision="rev_c",
+        weights_sha256="weights_hash_bbb",
+        config_sha256="config_hash_aaa",
+        scaling_factor=0.25000,  # Changed!
+        posterior_policy="posterior_mode",
+    )
+    mock_c = MockVAE(scaling_factor=0.25)
+    adapter_c = AutoencoderKLAdapter(mock_c, spec=spec_c)
+    gen_c = LatentCacheGenerator(adapter_c, cache_version=cache_version, dataset_root=tmp_path)
+    rep_c = gen_c.generate_cache(dataset_id=dataset_id, preprocessing_version=prep_version)
+    assert rep_c.latents_created == 2, "Changed VAE scaling factor must trigger complete re-encoding!"
+    assert rep_c.valid_cache_hits == 0
+
+
+def test_latent_cache_atomic_tensor_and_manifest_writes(tmp_path: Path, monkeypatch):
+    """Verify that temporary files live in the target directory and failed serialization never corrupts valid artifacts."""
+    dataset_id = "test_atomic_v001"
+    prep_version = "square256_center_v001"
+    cache_version = "vae_sd_mse_square256_v001"
+
+    create_synthetic_processed_dataset(tmp_path, dataset_id, prep_version, count=2)
+
+    adapter = AutoencoderKLAdapter(MockVAE())
+    generator = LatentCacheGenerator(adapter, cache_version=cache_version, dataset_root=tmp_path)
+
+    # 1. Successful first run
+    generator.generate_cache(dataset_id=dataset_id, preprocessing_version=prep_version)
+    cache_dir = tmp_path / dataset_id / "cache" / "latents" / cache_version
+    img1_file = cache_dir / "IMG-000001.safetensors"
+    manifest_file = cache_dir / "manifest.jsonl"
+
+    original_img1_bytes = img1_file.read_bytes()
+    original_manifest_text = manifest_file.read_text(encoding="utf-8")
+
+    # 2. Simulate failure during safetensors save
+    def failing_save_file(*args, **kwargs):
+        raise IOError("Simulated disk write error mid-stream!")
+
+    monkeypatch.setattr("rernggen.data.latent_cache.save_file", failing_save_file)
+
+    # Re-run with force=True: should fail gracefully and NOT corrupt existing file
+    rep = generator.generate_cache(dataset_id=dataset_id, preprocessing_version=prep_version, force=True)
+    assert rep.failures == 2
+    assert rep.latents_created == 0
+
+    # Verify original valid file was not corrupted
+    assert img1_file.read_bytes() == original_img1_bytes, "Failed save must not corrupt valid target file!"
+    assert manifest_file.read_text(encoding="utf-8") == original_manifest_text, "Failed run must not corrupt manifest!"
+
+    # Verify no dangling temporary files left in target directory
+    tmp_files = list(cache_dir.glob("*_tmp_*"))
+    assert len(tmp_files) == 0, "No temporary files should be left behind on error."
+
+
 def test_latent_cache_loader_operates_without_vae(tmp_path: Path):
     """Verify that LatentCacheLoader loads tensors cleanly without any VAE dependency."""
     dataset_id = "test_loader_no_vae"

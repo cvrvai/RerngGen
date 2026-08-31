@@ -143,6 +143,59 @@ def main() -> None:
         help="Force re-encoding even if already cached.",
     )
 
+    # Subcommand: cache-text-embeds
+    text_cache_parser = subparsers.add_parser(
+        "cache-text-embeds",
+        help="Extract and persist frozen text encoder pooled embeddings [512] as permanent safetensors.",
+    )
+    text_cache_parser.add_argument(
+        "--dataset-id",
+        "-d",
+        type=str,
+        default="khmer_story_cartoon_v001",
+        help="Dataset ID (default: 'khmer_story_cartoon_v001').",
+    )
+    text_cache_parser.add_argument(
+        "--caption-version",
+        "-c",
+        type=str,
+        default="captions_v001",
+        help="Caption version identifier (default: 'captions_v001').",
+    )
+    text_cache_parser.add_argument(
+        "--cache-version",
+        "-v",
+        type=str,
+        default="clip_b32_v001",
+        help="Text embedding cache version identifier (default: 'clip_b32_v001').",
+    )
+    text_cache_parser.add_argument(
+        "--model-path",
+        "-m",
+        type=str,
+        default="models/text_encoder/openai--clip-text-base-patch32",
+        help="Local path or HuggingFace ID of CLIP text encoder.",
+    )
+    text_cache_parser.add_argument(
+        "--dataset-root",
+        "-r",
+        type=str,
+        default="datasets",
+        help="Root directory for dataset repositories (default: 'datasets').",
+    )
+    text_cache_parser.add_argument(
+        "--device",
+        type=str,
+        default="cuda" if torch.cuda.is_available() else "cpu",
+        help="Compute device (cuda or cpu).",
+    )
+    text_cache_parser.add_argument(
+        "--force",
+        "-f",
+        action="store_true",
+        help="Force re-encoding even if already cached.",
+    )
+
     args = parser.parse_args()
 
     if args.command == "import":
@@ -194,6 +247,31 @@ def main() -> None:
         print(report.summary())
         if report.failures > 0:
             print(f"\n[WARNING] Encountered {report.failures} latent encoding failure(s).")
+
+    elif args.command == "cache-text-embeds":
+        from rernggen.data.text_cache import TextEmbeddingCacheGenerator
+        from rernggen.models.text.interface import CLIPTextEncoderAdapter
+
+        device = torch.device(args.device)
+        print(f"Loading CLIP text encoder from {args.model_path} onto {device}...")
+        adapter = CLIPTextEncoderAdapter.from_pretrained(
+            model_id_or_path=args.model_path,
+            device=device,
+        )
+        generator = TextEmbeddingCacheGenerator(
+            text_encoder_adapter=adapter,
+            cache_version=args.cache_version,
+            dataset_root=args.dataset_root,
+        )
+        report = generator.generate_cache(
+            dataset_id=args.dataset_id,
+            caption_version=args.caption_version,
+            force=args.force,
+            device=device,
+        )
+        print(report.summary())
+        if report.failures > 0:
+            print(f"\n[WARNING] Encountered {report.failures} text embedding failure(s).")
 
 
 if __name__ == "__main__":
