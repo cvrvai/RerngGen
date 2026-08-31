@@ -6,6 +6,7 @@ on a fixed synthetic batch.
 """
 
 import time
+from typing import Optional
 import pytest
 import torch
 import torch.nn as nn
@@ -113,8 +114,10 @@ def test_intentional_fixed_batch_overfit():
         total_norm = total_norm ** 0.5
         grad_norm_history.append(total_norm)
 
-        # Gradient clipping for training stability
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        # Config-driven gradient clipping for training stability (e.g. grad_clip_norm = 1.0 or None)
+        grad_clip_norm: Optional[float] = 1.0
+        if grad_clip_norm is not None:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=grad_clip_norm)
         optimizer.step()
 
     runtime = time.time() - start_time
