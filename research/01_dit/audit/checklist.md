@@ -15,5 +15,5 @@
 - [x] Step 11: Flow Matching Objective
 - [x] Step 12: Forward/Backward Training Smoke Test
 - [x] Step 13: Checkpoint Save & Resume Integrity
-- [ ] Step 14: Deterministic Euler ODE Sampler
+- [x] Step 14: Deterministic Euler ODE Sampler
 - [ ] Step 15: Tiny Dataset Overfit & Convergence Test

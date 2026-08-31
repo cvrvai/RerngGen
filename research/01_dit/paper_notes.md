@@ -45,4 +45,10 @@
     - **Flow Matching Loss:** $\mathcal{L}_{\text{FM}}(\theta) = \mathbb{E}_{t, \mathbf{x}_0, \mathbf{x}_1} \left[ \| \mathbf{v}_\theta(\mathbf{x}_t, t, \mathbf{y}_{\text{text}}) - (\mathbf{x}_1 - \mathbf{x}_0) \|_2^2 \right]$.
 13. **Checkpoint Save & Resume Integrity:**
     - A true training checkpoint encapsulates the complete experimental state: model parameters ($\theta$), optimizer state ($m_t, v_t$), global step index, configuration dictionary, and full RNG states (Python, PyTorch CPU, PyTorch CUDA).
-    - **Atomic Saving:** Checkpoints are written to a unique temporary file and atomically committed via `os.replace` to prevent corrupted files during interruptions.
+    - **Atomic Replacement Semantics:** Checkpoints are serialized to a temporary file in the destination directory and committed using `os.replace`. Atomic replacement prevents the primary checkpoint path from being exposed to a partially written serialization under normal process failure, provided the temporary file and destination are on the same filesystem. Atomic replacement does not, by itself, guarantee persistence through sudden hardware/power loss (unless explicit fsync is called).
+    - **Future-Facing State & Trust:** Any stateful components introduced in future experiments (e.g. LR schedulers, AMP `GradScaler`, EMA weights, distributed samplers) must be incorporated into checkpoint serialization for exact continuation. Deserialization via unrestricted `torch.load` must only be performed on trusted, project-produced artifacts.
+14. **Deterministic Euler ODE Sampler ($t=0 \to t=1$):**
+    - Under the frozen Flow Matching convention ($t=0$ noise $\to t=1$ data), the learned velocity field $\mathbf{v}_\theta(\mathbf{x}_t, t)$ points in the direction of increasing time $t$.
+    - The generative ODE $\frac{d\mathbf{x}}{dt} = \mathbf{v}_\theta(\mathbf{x}(t), t)$ is discretized with step size $\Delta t = \frac{1}{N}$ forward in time:
+      $$\mathbf{x}_{k+1} = \mathbf{x}_k + \Delta t \cdot \mathbf{v}_\theta(\mathbf{x}_k, t_k, \mathbf{y}_{\text{text}})$$
+    - The update uses **$+ \Delta t \cdot \mathbf{v}_\theta$** (moving from noise toward data). Using $-\Delta t \cdot \mathbf{v}$ would integrate in reverse, converting data back into noise.
