@@ -35,6 +35,37 @@ class ManifestRecord:
 
 
 @dataclass
+class ProcessedRecord:
+    """Schema for a single preprocessed derivative image record."""
+
+    image_id: str
+    dataset_id: str
+    preprocessing_version: str
+    source_sha256: str
+    processed_sha256: str
+    original_width: int
+    original_height: int
+    resized_width: int
+    resized_height: int
+    crop_left: int
+    crop_top: int
+    crop_width: int
+    crop_height: int
+    output_width: int
+    output_height: int
+    output_mode: str
+    output_relative_path: str
+    training_allowed: Optional[bool] = None
+    commercial_allowed: Optional[bool] = None
+    license_id: Optional[str] = None
+    status: str = "PROCESSED"
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Converts dataclass record to a JSON-serializable dictionary."""
+        return asdict(self)
+
+
+@dataclass
 class ImportReport:
     """Summary report produced upon completion of a dataset import operation."""
 
@@ -89,3 +120,43 @@ class ImportReport:
             return f"{size / (1024**2):.2f} MB"
         else:
             return f"{size / (1024**3):.2f} GB"
+
+
+@dataclass
+class PreprocessingReport:
+    """Summary report produced upon completion of an image preprocessing operation."""
+
+    dataset_id: str
+    preprocessing_version: str
+    target_size: int
+    processed_dir: Path
+    manifest_path: Path
+    total_images_in_dataset: int = 0
+    images_processed: int = 0
+    images_skipped_idempotent: int = 0
+    failures: int = 0
+    total_output_bytes: int = 0
+    elapsed_time_seconds: float = 0.0
+    records: List[ProcessedRecord] = field(default_factory=list)
+    failure_details: List[Dict[str, str]] = field(default_factory=list)
+
+    def summary(self) -> str:
+        """Generates a human-readable formatted summary string."""
+        bytes_formatted = ImportReport._format_bytes(self.total_output_bytes)
+        return (
+            "============================================================\n"
+            "DATASET PREPROCESSING COMPLETE\n"
+            "============================================================\n"
+            f"Dataset ID:            {self.dataset_id}\n"
+            f"Preprocessing Version: {self.preprocessing_version}\n"
+            f"Target Size:           {self.target_size}x{self.target_size}\n"
+            f"Processed Directory:   {self.processed_dir}\n"
+            f"Manifest Path:         {self.manifest_path}\n"
+            f"Total Originals:       {self.total_images_in_dataset}\n"
+            f"Images Processed:      {self.images_processed}\n"
+            f"Skipped (Idempotent):  {self.images_skipped_idempotent}\n"
+            f"Failures:              {self.failures}\n"
+            f"Total Output Bytes:    {bytes_formatted}\n"
+            f"Elapsed Time:          {self.elapsed_time_seconds:.2f}s\n"
+            "============================================================"
+        )
