@@ -8,3 +8,4 @@
 | 2026-08-31 | Step 3: PosEmbed2D | PASSED | Pair Programming | [1, 256, 384] fixed 2D sin/cos buffer, 0 params, 9/9 tests passed (incl. dtype cast) |
 | 2026-08-31 | Step 4: TimestepEmbed | PASSED | Pair Programming | [B] in [0,1] -> [B, 384], time_scale=1000.0, SiLU MLP, 246,528 params, 8/8 tests passed |
 | 2026-08-31 | Step 5: MultiHeadAttn | PASSED | Pair Programming | [B, 256, 384] -> [B, 256, 384], 6 heads, SDPA, 591,360 params, 9/9 tests passed |
+| 2026-08-31 | Step 6: TransformerMLP | PASSED | Pair Programming | [B, 256, 384] -> [B, 256, 1536] -> [B, 256, 384], GELU, 1,181,568 params, 7/7 tests passed |
