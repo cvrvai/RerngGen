@@ -81,6 +81,13 @@ class TextEmbeddingCacheGenerator:
                 "pooling_policy": self.adapter.spec.pooling_policy,
                 "weights_sha256": self.adapter.spec.weights_sha256,
                 "config_sha256": self.adapter.spec.config_sha256,
+                "tokenizer_class": self.adapter.spec.tokenizer_class,
+                "tokenizer_config_sha256": self.adapter.spec.tokenizer_config_sha256,
+                "vocab_sha256": self.adapter.spec.vocab_sha256,
+                "merges_sha256": self.adapter.spec.merges_sha256,
+                "special_tokens_map_sha256": self.adapter.spec.special_tokens_map_sha256,
+                "max_token_length": self.adapter.spec.max_token_length,
+                "tokenizer_identity_sha256": self.adapter.spec.tokenizer_identity_sha256,
             },
         )
 
@@ -101,7 +108,7 @@ class TextEmbeddingCacheGenerator:
             embed_file = cache_dir / embed_filename
             embed_rel = f"cache/text_embeds/{self.cache_version}/{embed_filename}"
 
-            # Idempotency check: verify existing embedding matches caption hash and text encoder identity
+            # Idempotency check: verify existing embedding matches caption hash, text encoder, and tokenizer identity
             if (
                 not force
                 and image_id in existing_cache_map
@@ -110,9 +117,18 @@ class TextEmbeddingCacheGenerator:
                 cached_rec = existing_cache_map[image_id]
                 if (
                     cached_rec.get("caption_sha256") == cap_rec.caption_sha256
+                    and cached_rec.get("text_encoder_revision") == self.adapter.spec.revision
                     and cached_rec.get("text_encoder_weights_sha256") == self.adapter.spec.weights_sha256
                     and cached_rec.get("text_encoder_config_sha256") == self.adapter.spec.config_sha256
+                    and cached_rec.get("tokenizer_class") == self.adapter.spec.tokenizer_class
+                    and cached_rec.get("tokenizer_config_sha256") == self.adapter.spec.tokenizer_config_sha256
+                    and cached_rec.get("vocab_sha256") == self.adapter.spec.vocab_sha256
+                    and cached_rec.get("merges_sha256") == self.adapter.spec.merges_sha256
+                    and cached_rec.get("special_tokens_map_sha256") == self.adapter.spec.special_tokens_map_sha256
+                    and cached_rec.get("max_token_length") == self.adapter.spec.max_token_length
+                    and cached_rec.get("tokenizer_identity_sha256") == self.adapter.spec.tokenizer_identity_sha256
                     and cached_rec.get("pooling_policy") == self.adapter.spec.pooling_policy
+                    and cached_rec.get("cache_version") == self.cache_version
                     and compute_sha256(embed_file) == cached_rec.get("embedding_sha256")
                 ):
                     report.valid_cache_hits += 1
@@ -163,6 +179,12 @@ class TextEmbeddingCacheGenerator:
                     text_encoder_weights_sha256=self.adapter.spec.weights_sha256,
                     text_encoder_config_sha256=self.adapter.spec.config_sha256,
                     tokenizer_class=self.adapter.spec.tokenizer_class,
+                    tokenizer_config_sha256=self.adapter.spec.tokenizer_config_sha256,
+                    vocab_sha256=self.adapter.spec.vocab_sha256,
+                    merges_sha256=self.adapter.spec.merges_sha256,
+                    special_tokens_map_sha256=self.adapter.spec.special_tokens_map_sha256,
+                    tokenizer_identity_sha256=self.adapter.spec.tokenizer_identity_sha256,
+                    max_token_length=self.adapter.spec.max_token_length,
                     pooling_policy=self.adapter.spec.pooling_policy,
                     embedding_shape=list(embed_tensor.shape),
                     embedding_dtype=str(embed_tensor.dtype).replace("torch.", ""),

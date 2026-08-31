@@ -186,30 +186,139 @@ def test_text_embedding_cache_invalidated_when_encoder_or_pooling_changes(tmp_pa
     cap_mgr.save_captions(dataset_id, records, version=cap_ver)
 
     # 1. Cache with Encoder Identity A
-    encoder_a = MockTextEncoder()
-    encoder_a.spec.weights_sha256 = "enc_weights_aaa"
-    encoder_a.spec.pooling_policy = "eos_token"
+    encoder_a = MockTextEncoder(weights_sha256="enc_weights_aaa", pooling_policy="eos_token")
     gen_a = TextEmbeddingCacheGenerator(encoder_a, cache_version=cache_ver, dataset_root=tmp_path)
     rep_a = gen_a.generate_cache(dataset_id=dataset_id, caption_version=cap_ver)
     assert rep_a.embeddings_created == 1
 
-    # 2. Run with Encoder Identity B (different weights hash) -> MUST re-encode
-    encoder_b = MockTextEncoder()
-    encoder_b.spec.weights_sha256 = "enc_weights_bbb"  # Changed!
-    encoder_b.spec.pooling_policy = "eos_token"
+    # 2. Run with Encoder Identity B (different weights hash) -> MUST re-encode (cache miss)
+    encoder_b = MockTextEncoder(weights_sha256="enc_weights_bbb", pooling_policy="eos_token")
     gen_b = TextEmbeddingCacheGenerator(encoder_b, cache_version=cache_ver, dataset_root=tmp_path)
     rep_b = gen_b.generate_cache(dataset_id=dataset_id, caption_version=cap_ver)
     assert rep_b.embeddings_created == 1
     assert rep_b.valid_cache_hits == 0
 
-    # 3. Run with Encoder Identity C (different pooling policy) -> MUST re-encode
-    encoder_c = MockTextEncoder()
-    encoder_c.spec.weights_sha256 = "enc_weights_bbb"
-    encoder_c.spec.pooling_policy = "mean_pooling"  # Changed!
+    # 3. Run with Encoder Identity C (different config hash) -> MUST re-encode (cache miss)
+    encoder_c = MockTextEncoder(config_sha256="config_sha_changed", pooling_policy="eos_token")
     gen_c = TextEmbeddingCacheGenerator(encoder_c, cache_version=cache_ver, dataset_root=tmp_path)
     rep_c = gen_c.generate_cache(dataset_id=dataset_id, caption_version=cap_ver)
     assert rep_c.embeddings_created == 1
     assert rep_c.valid_cache_hits == 0
+
+    # 4. Run with Encoder Identity D (different revision) -> MUST re-encode (cache miss)
+    encoder_d = MockTextEncoder(revision="rev_v2_changed", pooling_policy="eos_token")
+    gen_d = TextEmbeddingCacheGenerator(encoder_d, cache_version=cache_ver, dataset_root=tmp_path)
+    rep_d = gen_d.generate_cache(dataset_id=dataset_id, caption_version=cap_ver)
+    assert rep_d.embeddings_created == 1
+    assert rep_d.valid_cache_hits == 0
+
+    # 5. Run with Encoder Identity E (different pooling policy) -> MUST re-encode (cache miss)
+    encoder_e = MockTextEncoder(pooling_policy="mean_pooling")
+    gen_e = TextEmbeddingCacheGenerator(encoder_e, cache_version=cache_ver, dataset_root=tmp_path)
+    rep_e = gen_e.generate_cache(dataset_id=dataset_id, caption_version=cap_ver)
+    assert rep_e.embeddings_created == 1
+    assert rep_e.valid_cache_hits == 0
+
+
+def test_tokenizer_provenance_individual_field_invalidation(tmp_path: Path):
+    """Verify that changing any single tokenizer identity field causes a cache miss and re-encoding."""
+    dataset_id = "test_tok_inv_ds"
+    cap_ver = "captions_v001"
+    cache_ver = "clip_b32_v001"
+
+    cap_mgr = CaptionManager(dataset_root=tmp_path)
+    records = [
+        cap_mgr.create_caption_record("IMG-000001", dataset_id, "Folklore narrative scene.", caption_version=cap_ver)
+    ]
+    cap_mgr.save_captions(dataset_id, records, version=cap_ver)
+
+    base_kwargs = dict(
+        tokenizer_class="BaseTokenizer",
+        tokenizer_config_sha256="tok_cfg_sha_1",
+        vocab_sha256="vocab_sha_1",
+        merges_sha256="merges_sha_1",
+        special_tokens_map_sha256="special_sha_1",
+        max_token_length=77,
+    )
+
+    # 1. Base cache generation
+    encoder_base = MockTextEncoder(**base_kwargs)
+    gen_base = TextEmbeddingCacheGenerator(encoder_base, cache_version=cache_ver, dataset_root=tmp_path)
+    rep0 = gen_base.generate_cache(dataset_id=dataset_id, caption_version=cap_ver)
+    assert rep0.embeddings_created == 1
+    assert rep0.valid_cache_hits == 0
+
+    # 2. Re-run with identical spec -> CACHE HIT
+    rep_hit = gen_base.generate_cache(dataset_id=dataset_id, caption_version=cap_ver)
+    assert rep_hit.valid_cache_hits == 1
+    assert rep_hit.embeddings_created == 0
+
+    # 3. Test each tokenizer field mismatch individually -> MUST result in CACHE MISS (embeddings_created=1, hits=0)
+    mismatch_variations = [
+        ("tokenizer_class", "DifferentTokenizerClass"),
+        ("tokenizer_config_sha256", "tok_cfg_sha_MODIFIED"),
+        ("vocab_sha256", "vocab_sha_MODIFIED"),
+        ("merges_sha256", "merges_sha_MODIFIED"),
+        ("special_tokens_map_sha256", "special_sha_MODIFIED"),
+        ("max_token_length", 128),
+    ]
+
+    for field_name, modified_value in mismatch_variations:
+        # Reset cache to base state
+        gen_base.generate_cache(dataset_id=dataset_id, caption_version=cap_ver, force=True)
+
+        modified_kwargs = dict(base_kwargs)
+        modified_kwargs[field_name] = modified_value
+        encoder_mod = MockTextEncoder(**modified_kwargs)
+        gen_mod = TextEmbeddingCacheGenerator(encoder_mod, cache_version=cache_ver, dataset_root=tmp_path)
+
+        rep_mod = gen_mod.generate_cache(dataset_id=dataset_id, caption_version=cap_ver)
+        assert rep_mod.embeddings_created == 1, f"Failed cache miss for field: {field_name}"
+        assert rep_mod.valid_cache_hits == 0, f"Unexpected cache hit for field: {field_name}"
+
+        # Check manifest was atomically updated with the new spec
+        loader = TextEmbeddingCacheLoader(dataset_dir=tmp_path / dataset_id, cache_version=cache_ver)
+        manifest = loader.load_manifest()
+        assert len(manifest) == 1
+        assert getattr(manifest[0], field_name) == modified_value
+        assert manifest[0].tokenizer_identity_sha256 == encoder_mod.spec.tokenizer_identity_sha256
+
+
+def test_stale_cache_regeneration_and_atomic_manifest_update(tmp_path: Path):
+    """Verify recovery flow: old cache generated with Identity A is superseded by Identity B."""
+    dataset_id = "test_recovery_ds"
+    cap_ver = "captions_v001"
+    cache_ver = "clip_b32_v001"
+
+    cap_mgr = CaptionManager(dataset_root=tmp_path)
+    records = [
+        cap_mgr.create_caption_record("IMG-000001", dataset_id, "Scene 1", caption_version=cap_ver),
+        cap_mgr.create_caption_record("IMG-000002", dataset_id, "Scene 2", caption_version=cap_ver),
+    ]
+    cap_mgr.save_captions(dataset_id, records, version=cap_ver)
+
+    # 1. Identity A
+    encoder_a = MockTextEncoder(tokenizer_config_sha256="identity_A")
+    gen_a = TextEmbeddingCacheGenerator(encoder_a, cache_version=cache_ver, dataset_root=tmp_path)
+    rep_a = gen_a.generate_cache(dataset_id=dataset_id, caption_version=cap_ver)
+    assert rep_a.embeddings_created == 2
+
+    # Check manifest reflects Identity A
+    loader = TextEmbeddingCacheLoader(dataset_dir=tmp_path / dataset_id, cache_version=cache_ver)
+    manifest_a = loader.load_manifest()
+    assert all(r.tokenizer_config_sha256 == "identity_A" for r in manifest_a)
+
+    # 2. Identity B
+    encoder_b = MockTextEncoder(tokenizer_config_sha256="identity_B")
+    gen_b = TextEmbeddingCacheGenerator(encoder_b, cache_version=cache_ver, dataset_root=tmp_path)
+    rep_b = gen_b.generate_cache(dataset_id=dataset_id, caption_version=cap_ver)
+    assert rep_b.embeddings_created == 2
+    assert rep_b.valid_cache_hits == 0
+
+    # Manifest must now atomically reflect Identity B for all records
+    manifest_b = loader.load_manifest()
+    assert len(manifest_b) == 2
+    assert all(r.tokenizer_config_sha256 == "identity_B" for r in manifest_b)
 
 
 def test_trainable_projection_change_does_not_invalidate_frozen_text_cache(tmp_path: Path):

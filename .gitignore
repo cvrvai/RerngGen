@@ -43,7 +43,7 @@ htmlcov/
 *.bin
 *.safetensors
 *.ckpt
-models/
+/models/
 checkpoints/
 experiments/**/checkpoints/
 outputs/

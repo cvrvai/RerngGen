@@ -215,10 +215,11 @@ def test_paired_dataloader_batch_shapes_and_downstream_projection(tmp_path: Path
 
 
 def test_paired_dataset_governance_modes(tmp_path: Path):
-    """Verify that development_audit permits unknown rights while production_strict strictly rejects them."""
-    # 1. Unknown rights dataset (training_allowed = None)
-    ds_unknown = setup_synthetic_paired_dataset(tmp_path, dataset_id="ds_unknown", count=2, training_allowed=None)
+    """Verify that development_audit permits unknown rights while production_strict strictly enforces explicit versioned permissions."""
+    from rernggen.data.governance import GovernanceManager
 
+    # 1. Unknown rights dataset in DEVELOPMENT_AUDIT mode
+    ds_unknown = setup_synthetic_paired_dataset(tmp_path, dataset_id="ds_unknown", count=2, training_allowed=None)
     ds_dev = PairedLatentTextDataset(
         dataset_dir=ds_unknown,
         governance_mode=GovernanceMode.DEVELOPMENT_AUDIT,
@@ -226,20 +227,34 @@ def test_paired_dataset_governance_modes(tmp_path: Path):
     assert len(ds_dev) == 2
     assert ds_dev.governance_counts["unknown"] == 2
 
-    with pytest.raises(PermissionError, match="Production training gate rejected dataset"):
+    # PRODUCTION_STRICT without governance_version fails closed with ValueError
+    with pytest.raises(ValueError, match="PRODUCTION_STRICT requires an explicitly specified governance_version"):
         PairedLatentTextDataset(
             dataset_dir=ds_unknown,
             governance_mode=GovernanceMode.PRODUCTION_STRICT,
         )
 
-    # 2. Approved rights dataset (training_allowed = True)
-    ds_approved = setup_synthetic_paired_dataset(tmp_path, dataset_id="ds_approved", count=2, training_allowed=True)
+    # 2. Approved rights dataset with explicit governance version
+    gov_mgr = GovernanceManager(dataset_root=tmp_path)
+    ds_approved = setup_synthetic_paired_dataset(tmp_path, dataset_id="ds_approved", count=2, training_allowed=None)
+    gov_mgr.authorize_samples(
+        dataset_id="ds_approved",
+        governance_version="rights_v001",
+        image_ids=["IMG-000001", "IMG-000002"],
+        training_decision="ALLOW",
+        commercial_decision="UNKNOWN",
+        authorization_source="audit_pass",
+    )
+
     ds_prod = PairedLatentTextDataset(
         dataset_dir=ds_approved,
+        governance_version="rights_v001",
         governance_mode=GovernanceMode.PRODUCTION_STRICT,
     )
     assert len(ds_prod) == 2
     assert ds_prod.governance_counts["allowed"] == 2
+    assert ds_prod.governance_provenance["governance_version"] == "rights_v001"
+
 
 
 def test_paired_dataset_real_data_integration():

@@ -273,16 +273,22 @@ class TextEmbeddingRecord:
     text_encoder_weights_sha256: str
     text_encoder_config_sha256: str
     tokenizer_class: str
-    pooling_policy: str
-    embedding_shape: List[int]
-    embedding_dtype: str
-    embedding_sha256: str
-    embedding_relative_path: str
-    min_val: float
-    max_val: float
-    mean_val: float
-    std_val: float
-    l2_norm: float
+    tokenizer_config_sha256: str = ""
+    vocab_sha256: str = ""
+    merges_sha256: str = ""
+    special_tokens_map_sha256: str = ""
+    tokenizer_identity_sha256: str = ""
+    max_token_length: int = 77
+    pooling_policy: str = "eos_token"
+    embedding_shape: List[int] = field(default_factory=list)
+    embedding_dtype: str = "float32"
+    embedding_sha256: str = ""
+    embedding_relative_path: str = ""
+    min_val: float = 0.0
+    max_val: float = 0.0
+    mean_val: float = 0.0
+    std_val: float = 0.0
+    l2_norm: float = 0.0
     token_count: int = 0
     truncated: bool = False
     training_allowed: Optional[bool] = None
@@ -335,5 +341,176 @@ class TextEmbeddingCacheReport:
             f"Elapsed Time:          {self.elapsed_time_seconds:.2f}s\n"
             "============================================================"
         )
+
+
+@dataclass
+class GovernanceRecord:
+    """Schema for an explicit, versioned dataset item authorization record in governance manifest.jsonl."""
+
+    image_id: str
+    dataset_id: str
+    governance_version: str
+    training_allowed: Optional[bool]  # True (ALLOW), False (DENY), None (UNKNOWN)
+    commercial_allowed: Optional[bool]  # True (ALLOW), False (DENY), None (UNKNOWN)
+    authorization_source: str  # Mandatory: explicitly declared source (e.g. 'human_audit', 'license_verified')
+    authorized_at: str  # Mandatory: ISO-8601 UTC timestamp string
+    license_id: Optional[str] = None
+    authorization_note: str = ""
+    evidence_reference: Optional[str] = None
+    record_sha256: str = ""
+    status: str = "ACTIVE"  # "ACTIVE", "SUPERSEDED", "REVOKED"
+    previous_governance_version: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        """Validates record fields upon instantiation."""
+        if not isinstance(self.authorization_source, str) or not self.authorization_source.strip():
+            raise ValueError(
+                f"GovernanceRecord for '{self.image_id}' must have a non-empty authorization_source."
+            )
+        if not isinstance(self.authorized_at, str) or not self.authorized_at.strip():
+            raise ValueError(
+                f"GovernanceRecord for '{self.image_id}' must have a non-empty authorized_at timestamp."
+            )
+        if self.status not in ("ACTIVE", "SUPERSEDED", "REVOKED"):
+            raise ValueError(
+                f"Invalid governance status '{self.status}'. Must be 'ACTIVE', 'SUPERSEDED', or 'REVOKED'."
+            )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Converts dataclass record to a JSON-serializable dictionary."""
+        return asdict(self)
+
+
+@dataclass
+class CaptionReviewRecord:
+    """Schema for a versioned human caption review and quality acceptance record."""
+
+    image_id: str
+    dataset_id: str
+    review_version: str
+    caption_sha256: str
+    review_status: str  # "PENDING", "APPROVED", "REJECTED", "INVALIDATED"
+    reviewed_by: str  # Mandatory reviewer identifier (e.g. 'reviewer_alice')
+    review_source: str  # Mandatory origin (e.g. 'human_audit', 'batch_review_01')
+    reviewed_at: str  # Mandatory ISO-8601 UTC timestamp string
+    reason: str = ""
+    record_sha256: str = ""
+    previous_review_version: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        """Validates caption review record fields upon instantiation."""
+        if not isinstance(self.reviewed_by, str) or not self.reviewed_by.strip():
+            raise ValueError(
+                f"CaptionReviewRecord for '{self.image_id}' must have a non-empty reviewed_by."
+            )
+        if not isinstance(self.review_source, str) or not self.review_source.strip():
+            raise ValueError(
+                f"CaptionReviewRecord for '{self.image_id}' must have a non-empty review_source."
+            )
+        if not isinstance(self.reviewed_at, str) or not self.reviewed_at.strip():
+            raise ValueError(
+                f"CaptionReviewRecord for '{self.image_id}' must have a non-empty reviewed_at timestamp."
+            )
+        if not isinstance(self.caption_sha256, str) or not self.caption_sha256.strip():
+            raise ValueError(
+                f"CaptionReviewRecord for '{self.image_id}' must have a non-empty caption_sha256."
+            )
+        if self.review_status not in ("PENDING", "APPROVED", "REJECTED", "INVALIDATED"):
+            raise ValueError(
+                f"Invalid caption review status '{self.review_status}'. "
+                f"Must be 'PENDING', 'APPROVED', 'REJECTED', or 'INVALIDATED'."
+            )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Converts dataclass record to a JSON-serializable dictionary."""
+        return asdict(self)
+
+
+DUMMY_ATTRIBUTION_VALUES = frozenset({"human", "system", "manual", "unknown", "human_declared"})
+
+
+@dataclass
+class DatasetSnapshotRecord:
+    """Schema for a single frozen sample in an immutable dataset snapshot manifest."""
+
+    sample_id: str
+    dataset_id: str
+    snapshot_version: str
+    caption: str
+    caption_sha256: str
+    caption_version: str
+    caption_review_version: str
+    governance_version: str
+    latent_relative_path: str
+    latent_sha256: str
+    latent_shape: List[int]
+    latent_cache_version: str
+    text_embedding_relative_path: str
+    text_embedding_sha256: str
+    text_embedding_shape: List[int]
+    text_cache_version: str
+    eligibility_policy_version: str
+    record_sha256: str = ""
+
+    def __post_init__(self) -> None:
+        """Validates snapshot record fields upon instantiation."""
+        if not isinstance(self.sample_id, str) or not self.sample_id.strip():
+            raise ValueError("DatasetSnapshotRecord must have a non-empty sample_id.")
+        if not isinstance(self.caption_sha256, str) or not self.caption_sha256.strip():
+            raise ValueError(f"DatasetSnapshotRecord for '{self.sample_id}' must have a valid caption_sha256.")
+        if not isinstance(self.latent_sha256, str) or not self.latent_sha256.strip():
+            raise ValueError(f"DatasetSnapshotRecord for '{self.sample_id}' must have a valid latent_sha256.")
+        if not isinstance(self.text_embedding_sha256, str) or not self.text_embedding_sha256.strip():
+            raise ValueError(f"DatasetSnapshotRecord for '{self.sample_id}' must have a valid text_embedding_sha256.")
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Converts dataclass record to a JSON-serializable dictionary."""
+        return asdict(self)
+
+
+@dataclass
+class DatasetSnapshotMetadata:
+    """Schema for top-level metadata and cryptographic provenance of a dataset snapshot."""
+
+    dataset_id: str
+    snapshot_version: str
+    status: str  # "DRAFT", "FROZEN", "SUPERSEDED"
+    sample_count: int
+    created_at: str  # ISO-8601 UTC timestamp
+    created_by: str  # Mandatory explicit creator identifier
+    creation_source: str  # Mandatory explicit origin
+    governance_version: str
+    governance_manifest_sha256: str
+    caption_review_version: str
+    caption_review_manifest_sha256: str
+    eligibility_policy_version: str
+    snapshot_manifest_sha256: str
+    latent_cache_version: str = "vae_sd_mse_square256_v001"
+    text_cache_version: str = "clip_b32_v001"
+    caption_version: str = "captions_v002"
+    previous_snapshot_version: Optional[str] = None
+    notes: str = ""
+    metadata_sha256: str = ""
+
+    def __post_init__(self) -> None:
+        """Validates snapshot metadata fields upon instantiation."""
+        if not isinstance(self.snapshot_version, str) or not self.snapshot_version.strip() or self.snapshot_version.strip().lower() in ("latest", "current"):
+            raise ValueError(f"DatasetSnapshotMetadata requires an explicit snapshot_version (cannot be '{self.snapshot_version}').")
+        if not isinstance(self.created_by, str) or not self.created_by.strip() or self.created_by.strip().lower() in DUMMY_ATTRIBUTION_VALUES:
+            raise ValueError(f"DatasetSnapshotMetadata requires an explicit, non-dummy created_by identifier (got '{self.created_by}').")
+        if not isinstance(self.creation_source, str) or not self.creation_source.strip() or self.creation_source.strip().lower() in DUMMY_ATTRIBUTION_VALUES:
+            raise ValueError(f"DatasetSnapshotMetadata requires an explicit, non-dummy creation_source identifier (got '{self.creation_source}').")
+        if not isinstance(self.created_at, str) or not self.created_at.strip():
+            raise ValueError("DatasetSnapshotMetadata requires a non-empty ISO-8601 created_at timestamp.")
+        if self.status not in ("DRAFT", "FROZEN", "SUPERSEDED"):
+            raise ValueError(f"Invalid snapshot status '{self.status}'. Must be 'DRAFT', 'FROZEN', or 'SUPERSEDED'.")
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Converts dataclass record to a JSON-serializable dictionary."""
+        return asdict(self)
+
+
+
+
 
 

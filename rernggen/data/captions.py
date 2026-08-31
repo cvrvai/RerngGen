@@ -9,9 +9,18 @@ from typing import List, Optional, Union
 from rernggen.data.schema import CaptionRecord
 
 
+def normalize_caption_text(text: str) -> str:
+    """Normalizes caption text by stripping leading/trailing whitespace and collapsing internal whitespace."""
+    if not isinstance(text, str):
+        raise ValueError(f"Caption text must be a string, got {type(text)}.")
+    return " ".join(text.strip().split())
+
+
 def compute_caption_sha256(text: str) -> str:
-    """Computes SHA-256 hash of UTF-8 encoded caption text string."""
-    return hashlib.sha256(text.strip().encode("utf-8")).hexdigest()
+    """Computes deterministic SHA-256 hash of normalized UTF-8 encoded caption text string."""
+    normalized = normalize_caption_text(text)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
 
 
 class CaptionManager:
