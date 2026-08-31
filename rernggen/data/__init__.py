@@ -1,8 +1,14 @@
-"""Dataset intake, preprocessing, latent caching, captioning, and text embedding management for RerngGen."""
+"""Dataset intake, preprocessing, latent caching, captioning, and paired DataLoader for RerngGen."""
 
 from rernggen.data.captions import CaptionManager, compute_caption_sha256
+from rernggen.data.dataset import (
+    GovernanceMode,
+    PairedLatentTextDataset,
+    create_paired_dataloader,
+    paired_collate_fn,
+)
 from rernggen.data.importer import DatasetImporter, import_image_directory
-from rernggen.data.latent_cache import LatentCacheGenerator, LatentCacheLoader
+from rernggen.data.latent_cache import LatentCacheLoader, LatentCacheGenerator
 from rernggen.data.preprocessor import ImagePreprocessor, preprocess_dataset
 from rernggen.data.schema import (
     CaptionRecord,
@@ -27,6 +33,10 @@ __all__ = [
     "compute_caption_sha256",
     "TextEmbeddingCacheGenerator",
     "TextEmbeddingCacheLoader",
+    "PairedLatentTextDataset",
+    "GovernanceMode",
+    "create_paired_dataloader",
+    "paired_collate_fn",
     "ManifestRecord",
     "ProcessedRecord",
     "LatentRecord",

@@ -173,6 +173,94 @@ def test_text_embedding_cache_idempotency_and_invalidation(tmp_path: Path):
     assert rep3.valid_cache_hits == 1
 
 
+def test_text_embedding_cache_invalidated_when_encoder_or_pooling_changes(tmp_path: Path):
+    """Verify that changing encoder weights SHA, config SHA, revision, or pooling policy invalidates cache."""
+    dataset_id = "test_text_enc_inv_v001"
+    cap_ver = "captions_v001"
+    cache_ver = "clip_b32_v001"
+
+    cap_mgr = CaptionManager(dataset_root=tmp_path)
+    records = [
+        cap_mgr.create_caption_record("IMG-000001", dataset_id, "Sample caption.", caption_version=cap_ver)
+    ]
+    cap_mgr.save_captions(dataset_id, records, version=cap_ver)
+
+    # 1. Cache with Encoder Identity A
+    encoder_a = MockTextEncoder()
+    encoder_a.spec.weights_sha256 = "enc_weights_aaa"
+    encoder_a.spec.pooling_policy = "eos_token"
+    gen_a = TextEmbeddingCacheGenerator(encoder_a, cache_version=cache_ver, dataset_root=tmp_path)
+    rep_a = gen_a.generate_cache(dataset_id=dataset_id, caption_version=cap_ver)
+    assert rep_a.embeddings_created == 1
+
+    # 2. Run with Encoder Identity B (different weights hash) -> MUST re-encode
+    encoder_b = MockTextEncoder()
+    encoder_b.spec.weights_sha256 = "enc_weights_bbb"  # Changed!
+    encoder_b.spec.pooling_policy = "eos_token"
+    gen_b = TextEmbeddingCacheGenerator(encoder_b, cache_version=cache_ver, dataset_root=tmp_path)
+    rep_b = gen_b.generate_cache(dataset_id=dataset_id, caption_version=cap_ver)
+    assert rep_b.embeddings_created == 1
+    assert rep_b.valid_cache_hits == 0
+
+    # 3. Run with Encoder Identity C (different pooling policy) -> MUST re-encode
+    encoder_c = MockTextEncoder()
+    encoder_c.spec.weights_sha256 = "enc_weights_bbb"
+    encoder_c.spec.pooling_policy = "mean_pooling"  # Changed!
+    gen_c = TextEmbeddingCacheGenerator(encoder_c, cache_version=cache_ver, dataset_root=tmp_path)
+    rep_c = gen_c.generate_cache(dataset_id=dataset_id, caption_version=cap_ver)
+    assert rep_c.embeddings_created == 1
+    assert rep_c.valid_cache_hits == 0
+
+
+def test_trainable_projection_change_does_not_invalidate_frozen_text_cache(tmp_path: Path):
+    """Verify that changing the downstream trainable TextProjection has ZERO effect on frozen [512] cache."""
+    dataset_id = "test_proj_boundary_v001"
+    cap_ver = "captions_v001"
+    cache_ver = "clip_b32_v001"
+
+    cap_mgr = CaptionManager(dataset_root=tmp_path)
+    records = [
+        cap_mgr.create_caption_record("IMG-000001", dataset_id, "Sample caption.", caption_version=cap_ver)
+    ]
+    cap_mgr.save_captions(dataset_id, records, version=cap_ver)
+
+    encoder = MockTextEncoder()
+    gen = TextEmbeddingCacheGenerator(encoder, cache_version=cache_ver, dataset_root=tmp_path)
+    rep1 = gen.generate_cache(dataset_id=dataset_id, caption_version=cap_ver)
+    assert rep1.embeddings_created == 1
+
+    # Load frozen embedding
+    loader = TextEmbeddingCacheLoader(dataset_dir=tmp_path / dataset_id, cache_version=cache_ver)
+    frozen_emb = loader.load_embedding("IMG-000001")
+
+    # Initialize two completely different projections (or updated projection weights)
+    proj1 = TextProjection(in_features=512, out_features=384)
+    proj2 = TextProjection(in_features=512, out_features=384)
+    with torch.no_grad():
+        proj2.proj.weight.fill_(0.5)
+
+    c1 = proj1(frozen_emb.unsqueeze(0))
+    c2 = proj2(frozen_emb.unsqueeze(0))
+
+    # The projected outputs differ because projection is trainable, but cache hit remains 100% valid
+    assert not torch.allclose(c1, c2)
+    rep2 = gen.generate_cache(dataset_id=dataset_id, caption_version=cap_ver)
+    assert rep2.valid_cache_hits == 1
+    assert rep2.embeddings_created == 0
+
+
+def test_token_truncation_detection():
+    """Verify that captions exceeding maximum token length are flagged with truncated=True."""
+    encoder = MockTextEncoder()
+    encoder.spec.max_token_length = 5  # artificially low limit for test
+
+    _, diags = encoder.encode_text_with_diagnostics(["A short word.", "A very long sentence exceeding five tokens easily."])
+    assert diags[0]["token_count"] == 5
+    assert diags[0]["truncated"] is False
+    assert diags[1]["token_count"] > 5
+    assert diags[1]["truncated"] is True
+
+
 def test_text_embedding_cache_atomic_writes(tmp_path: Path, monkeypatch):
     """Verify atomic write resilience against simulated failure."""
     dataset_id = "test_text_atomic"

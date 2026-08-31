@@ -122,13 +122,14 @@ class TextEmbeddingCacheGenerator:
 
             tmp_embed_file = None
             try:
-                # 1. Encode caption with frozen text encoder -> [1, 512]
-                pooled_embed = self.adapter.encode_text(
-                    captions=cap_rec.caption,
+                # 1. Encode caption with frozen text encoder -> [1, 512] + diagnostics
+                pooled_embed, diag_list = self.adapter.encode_text_with_diagnostics(
+                    captions=[cap_rec.caption],
                     device=device,
                     dtype=dtype,
                 )
                 embed_tensor = pooled_embed.squeeze(0).contiguous().to(torch.float32).cpu()
+                diag = diag_list[0] if diag_list else {"token_count": 0, "truncated": False}
 
                 if not torch.all(torch.isfinite(embed_tensor)):
                     raise ValueError(f"Non-finite values encountered in text embedding for {image_id}")
@@ -150,7 +151,7 @@ class TextEmbeddingCacheGenerator:
                 report.total_cache_bytes += embed_size
                 embed_sha = compute_sha256(embed_file)
 
-                # 4. Build TextEmbeddingRecord with exact governance passthrough
+                # 4. Build TextEmbeddingRecord with exact governance passthrough & truncation visibility
                 emb_rec = TextEmbeddingRecord(
                     image_id=image_id,
                     dataset_id=dataset_id,
@@ -172,6 +173,8 @@ class TextEmbeddingCacheGenerator:
                     mean_val=round(mean_val, 4),
                     std_val=round(std_val, 4),
                     l2_norm=round(l2_norm, 4),
+                    token_count=diag["token_count"],
+                    truncated=diag["truncated"],
                     training_allowed=cap_rec.training_allowed,
                     commercial_allowed=cap_rec.commercial_allowed,
                     license_id=cap_rec.license_id,

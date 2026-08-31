@@ -283,6 +283,8 @@ class TextEmbeddingRecord:
     mean_val: float
     std_val: float
     l2_norm: float
+    token_count: int = 0
+    truncated: bool = False
     training_allowed: Optional[bool] = None
     commercial_allowed: Optional[bool] = None
     license_id: Optional[str] = None
