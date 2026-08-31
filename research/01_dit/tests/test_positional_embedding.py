@@ -107,3 +107,14 @@ def test_pos_embed_sequence_length_mismatch_error():
 
     with pytest.raises(ValueError, match="Sequence length mismatch"):
         pos_embed_mod(x_invalid)
+
+
+def test_pos_embed_dtype_and_device_casting():
+    """Verify positional embedding safely matches input tensor dtype (float16, bfloat16, float64)."""
+    pos_embed_mod = PositionalEmbedding2D(embed_dim=384, grid_size=(16, 16))
+
+    for dtype in [torch.float16, torch.bfloat16, torch.float32, torch.float64]:
+        x = torch.randn(2, 256, 384, dtype=dtype)
+        out = pos_embed_mod(x)
+        assert out.dtype == dtype, f"Expected output dtype {dtype}, got {out.dtype}"
+

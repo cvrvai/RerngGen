@@ -5,7 +5,7 @@
 - [x] Step 1: Patchify & PatchEmbed
 - [x] Step 2: Unpatchify
 - [x] Step 3: 2D Positional Embeddings
-- [ ] Step 4: Timestep Embedding MLP
+- [x] Step 4: Timestep Embedding MLP
 - [ ] Step 5: Multi-Head Self-Attention
 - [ ] Step 6: Transformer MLP
 - [ ] Step 7: adaLN-Zero Conditioning

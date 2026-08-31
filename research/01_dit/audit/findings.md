@@ -5,4 +5,5 @@
 | 2026-08-31 | Step 0: Setup | PASSED | Pair Programming | Scaffolding initialized, PyTorch 2.6.0+cu124 verified |
 | 2026-08-31 | Step 1: PatchEmbed | PASSED | Pair Programming | [B, 4, 32, 32] -> [B, 256, 384], 6,528 params, 5/5 tests passed |
 | 2026-08-31 | Step 2: Unpatchify | PASSED | Pair Programming | [B, 256, 16] -> [B, 4, 32, 32], exact spatial roundtrip verified, 6/6 tests passed |
-| 2026-08-31 | Step 3: PosEmbed2D | PASSED | Pair Programming | [1, 256, 384] fixed 2D sin/cos buffer, 0 params, 8/8 tests passed |
+| 2026-08-31 | Step 3: PosEmbed2D | PASSED | Pair Programming | [1, 256, 384] fixed 2D sin/cos buffer, 0 params, 9/9 tests passed (incl. dtype cast) |
+| 2026-08-31 | Step 4: TimestepEmbed | PASSED | Pair Programming | [B] -> [B, 384], SiLU MLP, 246,528 params, 7/7 tests passed |
