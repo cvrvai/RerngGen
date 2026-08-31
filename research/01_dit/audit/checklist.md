@@ -11,7 +11,7 @@
 - [x] Step 7: adaLN-Zero Conditioning
 - [x] Step 8: Single DiT Block & Zero-Init Identity
 - [x] Step 9: Final Layer Head
-- [ ] Step 10: Complete DiT Assembly & Parameter Audit
+- [x] Step 10: Complete DiT Assembly & Parameter Audit
 - [ ] Step 11: Flow Matching Objective
 - [ ] Step 12: Forward/Backward Training Smoke Test
 - [ ] Step 13: Checkpoint Save & Resume Integrity
