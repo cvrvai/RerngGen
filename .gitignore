@@ -54,6 +54,7 @@ data/raw/
 data/latents/
 data/text_embeds/
 data/shards/
+datasets/
 *.tar
 *.parquet
 
